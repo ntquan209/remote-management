@@ -111,16 +111,28 @@ export const onEvent = (event, callback) => {
 
 /**
  * Gửi lệnh tới Backend/Agent qua WebSocket
- * @param {string} type - Loại lệnh (vd: "TAKE_SCREENSHOT", "KILL_PROCESS")
- * @param {any} payload - Dữ liệu kèm theo (tùy chọn)
+ * @param {string} type - Loại lệnh (vd: "SHUTDOWN", "SCREENSHOT")
+ * @param {any} payload - Dữ liệu kèm theo
+ *   - Nếu là string (tên máy): gửi dạng {"event":type, "target":payload}
+ *   - Nếu là object: gửi dạng {"event":type, "data":payload}
+ *   - null: gửi dạng {"event":type}
  * 
- * Dữ liệu gửi đi được đóng gói dạng JSON:
- * { event: "TAKE_SCREENSHOT", data: { ... } }
+ * Backend xử lý:
+ * - Có "target" → chuyển tiếp tới agent đó (định dạng {command, data})
+ * - Có "data" → broadcast tới tất cả agent
  */
 export const emitCommand = (type, payload = null) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        // Đóng gói thành object JSON để Backend dễ xử lý
-        const messageObj = payload ? { event: type, data: payload } : { event: type };
+        let messageObj;
+        if (typeof payload === 'string') {
+            // payload là tên agent mục tiêu (vd: "agent-01")
+            messageObj = { event: type, target: payload };
+        } else if (payload) {
+            // payload là object data
+            messageObj = { event: type, data: payload };
+        } else {
+            messageObj = { event: type };
+        }
         const data = JSON.stringify(messageObj);
         socket.send(data);
     } else {
