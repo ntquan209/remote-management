@@ -139,9 +139,14 @@ async def websocket_endpoint(websocket: WebSocket, agent_id: str):
                     await manager.send_to_agent(payload["target"], json.dumps(agent_cmd))
                     print(f"→ Gửi lệnh '{cmd}' tới {payload['target']}")
                 else:
-                    # Chỉ broadcast từ Agent Python (có command), không gửi event nội bộ (agent_list, agent_connected)
+                    # Chỉ chuyển tiếp dữ liệu sang các kết nối KHÁC (Frontend/Các máy khác), không gửi ngược lại chính nó
                     if payload.get("command"):
-                        await manager.broadcast(data)
+                        for aid, ws in list(manager.active_connections.items()):
+                            if aid != agent_id: # 🎯 CHẶN KHÔNG CHO DỘI NGƯỢC VỀ CHÍNH NÓ
+                                try:
+                                    await ws.send_text(data)
+                                except:
+                                    pass
             except json.JSONDecodeError:
                 # Text thuần: broadcast kèm prefix
                 await manager.broadcast(f"Agent {agent_id}: {data}")

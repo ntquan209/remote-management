@@ -1,0 +1,4 @@
+mss
+psutil
+pillow
+websocket-client
