@@ -1,5 +1,6 @@
 /**
- * Machine Selector Component - Chọn và quản lý máy trạm (Bản sửa đổi tự động nạp)
+ * Machine Selector Component - Chọn và quản lý máy trạm
+ * (Bản sửa lỗi: Khóa cứng máy trạm đang chọn, bảo vệ luồng Live stream đa máy)
  */
 
 import { getElementById, updateElement } from '../utils/dom.js';
@@ -40,14 +41,22 @@ export const updateMachineDropdown = () => {
   const select = getElementById('machine-select');
   if (!select) return;
 
+  // Giữ lại máy đang chọn trước đó để bảo vệ trạng thái ổn định
   const savedTarget = targetMachine;
   select.innerHTML = "";
 
   if (currentOnlineList.size === 0) {
     select.innerHTML = '<option value="">-- Trống (Offline) --</option>';
+    targetMachine = "";
     updateStatusPill(false);
     return;
   }
+
+  // Tạo option mặc định ban đầu để người dùng chủ động chọn, tránh tự nhảy máy
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = "";
+  defaultOpt.textContent = "-- Chọn máy trạm mục tiêu --";
+  select.appendChild(defaultOpt);
 
   // Tạo option cho mỗi máy online
   currentOnlineList.forEach(machine => {
@@ -57,17 +66,20 @@ export const updateMachineDropdown = () => {
     select.appendChild(opt);
   });
 
-  // Khôi phục selection hoặc chọn máy đầu tiên
-  if (currentOnlineList.has(savedTarget)) {
+  // 🎯 KHÓA TRẠNG THÁI CHÍNH XÁC: 
+  // Nếu máy cũ vẫn online, giữ nguyên selection. Tuyệt đối không tự chọn máy đầu tiên!
+  if (savedTarget && currentOnlineList.has(savedTarget)) {
     select.value = savedTarget;
+    targetMachine = savedTarget;
   } else {
-    select.value = Array.from(currentOnlineList)[0];
-    targetMachine = select.value;
+    // Nếu máy cũ đã bốc hơi (offline), trả về trạng thái chờ chọn
+    select.value = "";
+    targetMachine = "";
   }
 
   // Cập nhật số máy online trên dashboard
   updateElement('total-online-machines-lbl', currentOnlineList.size);
-  updateStatusPill(true);
+  updateStatusPill(!!targetMachine);
 };
 
 /**
@@ -78,10 +90,14 @@ export const onTargetMachineChange = () => {
   if (!select) return;
   targetMachine = select.value;
 
-  // Reset process table với thông báo nạp luồng thông tin mới
+  // Reset bảng tiến trình về trạng thái chờ nạp dữ liệu của máy mới chọn
   const tbody = getElementById('process-table-body');
   if (tbody) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Đang nạp luồng tiến trình thời gian thực của máy [${targetMachine}]...</td></tr>`;
+    if (targetMachine) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Đang nạp luồng tiến trình thời gian thực của máy [${targetMachine}]...</td></tr>`;
+    } else {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Vui lòng chọn một máy trạm để xem tiến trình...</td></tr>`;
+    }
   }
 
   updateElement('sidebar-proc-badge', "0");
@@ -96,12 +112,12 @@ export const updateStatusPill = (isOnline) => {
   const pill = getElementById('global-status-pill');
   if (!pill) return;
 
-  if (isOnline) {
+  if (isOnline && targetMachine) {
     pill.className = "status-pill";
-    pill.innerHTML = `<div class="blink"></div>Đang khiển: ${targetMachine}`;
+    pill.innerHTML = `<div class="blink"></div>Đang khiển: <strong>${targetMachine}</strong>`;
   } else {
     pill.className = "status-pill offline";
-    pill.innerHTML = `<div class="blink"></div>Không có thiết bị kết nối`;
+    pill.innerHTML = `<div class="blink"></div>Hệ thống đang chờ thiết bị...`;
   }
 };
 

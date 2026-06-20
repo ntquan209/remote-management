@@ -1,5 +1,5 @@
 /**
- * Socket Library - Quản lý kết nối WebSocket Native (Cập nhật tương thích FastAPI)
+ * Socket Library - Quản lý kết nối WebSocket Native (Cập nhật tương thích FastAPI & Hỗ trợ Đa Máy)
  * 📌 CHỨC NĂNG:
  * - Khởi tạo kết nối WebSocket thuần (Native) tới backend FastAPI
  * - Tự động kết nối lại khi mất kết nối
@@ -91,19 +91,19 @@ export const onEvent = (event, callback) => {
 
 /**
  * Gửi lệnh tới Backend/Agent qua WebSocket
+ * 🎯 ĐỒNG BỘ 3 THAM SỐ CHUẨN ĐỊNH TUYẾN: 
+ * Giữ cấu trúc phẳng (Event, Target, Data) để phân làn rạch ròi 2 tab 2 máy không đá ghế nhau.
  */
-export const emitCommand = (type, payload = null) => {
+export const emitCommand = (type, target = null, data = null) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
-        let messageObj;
-        if (typeof payload === 'string') {
-            messageObj = { event: type, target: payload };
-        } else if (payload) {
-            messageObj = { event: type, data: payload };
-        } else {
-            messageObj = { event: type };
-        }
-        const data = JSON.stringify(messageObj);
-        socket.send(data);
+        const messageObj = {
+            event: type,
+            target: target, // ID máy nhận lệnh (vd: 'Kali_Lab_01', 'Kali_Lab_02')
+            data: data && typeof data === 'object' ? data : {}
+        };
+
+        const rawPayload = JSON.stringify(messageObj);
+        socket.send(rawPayload);
     } else {
         console.error("! Không thể gửi: WebSocket chưa kết nối.");
     }
