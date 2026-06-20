@@ -35,7 +35,8 @@ import {
   keylogPanel,
   filePanel,
   webcamPanel,
-  powerPanel
+  powerPanel,
+  adminPanel
 } from './panels.js';
 
 /**
@@ -86,6 +87,7 @@ export const renderApp = () => {
     ${filePanel}
     ${webcamPanel}
     ${powerPanel}
+    ${adminPanel}
   `;
   
   mainDiv.appendChild(contentArea);

@@ -30,7 +30,9 @@ class User(Base):
     - id: ID tự tăng (khóa chính)
     - username: Tên đăng nhập (duy nhất)
     - email: Email (duy nhất)
+    - full_name: Họ tên đầy đủ
     - hashed_password: Mật khẩu đã mã hóa bcrypt
+    - role: Vai trò (teacher/admin) - dùng để phân quyền
     - is_active: Trạng thái hoạt động
     - created_at: Thời gian tạo tài khoản
     """
@@ -39,7 +41,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
+    full_name = Column(String, nullable=True)
     hashed_password = Column(String)
+    role = Column(String, default="student")  # student, teacher, admin
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

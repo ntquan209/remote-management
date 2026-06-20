@@ -1,13 +1,13 @@
 /**
- * Panels Templates - Tất cả các panel nội dung (8 panel)
+ * Panels Templates - Tất cả các panel nội dung
  * 
  * 📌 CHỨC NĂNG:
- * - Định nghĩa HTML cho 8 panel chức năng
+ * - Định nghĩa HTML cho các panel chức năng
  * - Mỗi panel là một template string (template literal)
  * - Được render bởi renderer.js và ẩn/hiện bởi switchPanel()
  * 
  * 📋 DANH SÁCH PANEL:
- * 1. dashboardPanel: Thống kê tổng quan (số máy, process, audit log)
+ * 1. dashboardPanel: Thống kê tổng quan
  * 2. appsPanel: Danh sách ứng dụng whitelist
  * 3. processPanel: Danh sách tiến trình đang chạy
  * 4. screenPanel: Chụp màn hình và live stream
@@ -15,20 +15,9 @@
  * 6. filePanel: File sandbox
  * 7. webcamPanel: Webcam stream
  * 8. powerPanel: Điều khiển nguồn (Restart/Shutdown)
- * 
- * 🔗 CÁC LIÊN KẾT:
- * - Mỗi panel có id="panel-{name}" để switchPanel() tìm và active
- * - Các button gọi hàm global: triggerScreen(), triggerWebcam(), triggerPower()
- * - Các bảng có id để pages/*.js cập nhật nội dung động
+ * 9. adminPanel: Quản trị hệ thống (Admin only)
  */
 
-// Content panels template
-
-/**
- * Dashboard - Tổng quan hệ thống
- * Hiển thị 4 thông số: máy online, process, audit logs, quyền
- * Bảng audit log sẽ được cập nhật động bởi audit.js
- */
 export const dashboardPanel = `
 <div class="panel active" id="panel-dashboard">
   <div class="panel-hdr">
@@ -39,7 +28,7 @@ export const dashboardPanel = `
     <div class="card"><div class="stat-lbl">Máy Lab trực tuyến</div><div class="stat-val" id="total-online-machines-lbl">0</div></div>
     <div class="card"><div class="stat-lbl">Tiến trình (Máy đang chọn)</div><div class="stat-val" id="total-procs-lbl" style="color:var(--warning)">0</div></div>
     <div class="card"><div class="stat-lbl">Hành động ghi Log</div><div class="stat-val" id="total-logs-lbl" style="color:var(--success)">0</div></div>
-    <div class="card"><div class="stat-lbl">Quyền tài khoản</div><div class="stat-val" style="color:white;font-size:18px;margin-top:6px">Giảng viên (Teacher)</div></div>
+    <div class="card"><div class="stat-lbl">Quyền tài khoản</div><div class="stat-val" id="user-role-display" style="color:white;font-size:18px;margin-top:6px">Đang tải...</div></div>
   </div>
   <div class="card">
     <h3 style="font-size:15px;margin-bottom:12px;color:var(--text-title)">Nhật ký hành động hệ thống gần đây (Audit Log)</h3>
@@ -55,10 +44,6 @@ export const dashboardPanel = `
 </div>
 `;
 
-/**
- * Applications - Danh sách ứng dụng whitelist
- * Hiển thị các ứng dụng được phép chạy trên máy trạm
- */
 export const appsPanel = `
 <div class="panel" id="panel-apps">
   <div class="panel-hdr">
@@ -76,11 +61,6 @@ export const appsPanel = `
 </div>
 `;
 
-/**
- * Processes - Danh sách tiến trình
- * Hiển thị top 15 tiến trình với PID, tên, CPU, RAM
- * Có nút Kill để tắt tiến trình
- */
 export const processPanel = `
 <div class="panel" id="panel-procs">
   <div class="panel-hdr">
@@ -98,13 +78,6 @@ export const processPanel = `
 </div>
 `;
 
-/**
- * Screen - Chụp màn hình và Live Stream
- * - Nút "Chụp ảnh màn hình": chụp tĩnh
- * - Nút "Live Stream": stream 1 FPS
- * - Nút "Dừng stream": tắt live
- * - Consent box thông báo về bảo mật
- */
 export const screenPanel = `
 <div class="panel" id="panel-screen">
   <div class="panel-hdr">
@@ -128,12 +101,6 @@ export const screenPanel = `
 </div>
 `;
 
-/**
- * Keylogger - Ghi nhận phím bấm
- * - Nút bật/tắt ghi nhận phím
- * - Nút xóa dữ liệu hiển thị
- * - Khu vực hiển thị phím theo thời gian thực
- */
 export const keylogPanel = `
 <div class="panel" id="panel-keylog">
   <div class="panel-hdr">
@@ -154,11 +121,6 @@ export const keylogPanel = `
 </div>
 `;
 
-/**
- * File - File Sandbox
- * Khu vực an toàn để xem và tải file từ máy trạm
- * Giới hạn trong thư mục chỉ định, chống path traversal
- */
 export const filePanel = `
 <div class="panel" id="panel-files">
   <div class="panel-hdr">
@@ -175,11 +137,6 @@ export const filePanel = `
 </div>
 `;
 
-/**
- * Webcam - Webcam Stream
- * Bật/tắt webcam trên máy trạm
- * Yêu cầu sự đồng ý của sinh viên trước khi bật
- */
 export const webcamPanel = `
 <div class="panel" id="panel-webcam">
   <div class="panel-hdr">
@@ -202,12 +159,6 @@ export const webcamPanel = `
 </div>
 `;
 
-/**
- * Power - Điều khiển nguồn
- * Restart: Khởi động lại máy trạm
- * Shutdown: Tắt nguồn máy trạm
- * Cả 2 đều có cảnh báo xác nhận
- */
 export const powerPanel = `
 <div class="panel" id="power-panel">
   <div class="panel-hdr">
@@ -229,6 +180,43 @@ export const powerPanel = `
 </div>
 `;
 
+/**
+ * Admin Panel - Quản trị hệ thống (Chỉ dành cho admin)
+ */
+export const adminPanel = `
+<div class="panel" id="panel-admin">
+  <div class="panel-hdr">
+    <span class="panel-title">⚙️ Quản trị hệ thống</span>
+    <span class="panel-subtitle">Quản lý người dùng và phân quyền (Admin only)</span>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="font-size:15px;margin-bottom:12px;color:var(--text-title)">📋 Danh sách người dùng</h3>
+    <div class="table-wrap">
+      <table id="admin-users-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Tên đăng nhập</th>
+            <th>Email</th>
+            <th>Họ tên</th>
+            <th>Vai trò</th>
+            <th>Trạng thái</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Đang tải dữ liệu...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="consent-box">
+    <i class="ti ti-shield-lock"></i>
+    <div><strong>Phân quyền nghiêm ngặt:</strong> Chỉ tài khoản có quyền <strong>admin</strong> mới có thể quản lý người dùng. Teacher có thể điều khiển agent, student chỉ xem dashboard.</div>
+  </div>
+</div>
+`;
+
 export default {
   dashboardPanel,
   appsPanel,
@@ -237,5 +225,6 @@ export default {
   keylogPanel,
   filePanel,
   webcamPanel,
-  powerPanel
+  powerPanel,
+  adminPanel
 };

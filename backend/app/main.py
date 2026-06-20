@@ -25,6 +25,7 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import init_db
 from app.manager import manager
+from app.routes import router as auth_router
 # QUAN TRỌNG: Import models để SQLAlchemy biết các bảng cần tạo khi gọi init_db()
 import app.models
 
@@ -59,6 +60,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============ Auth Routes ============
+app.include_router(auth_router)
 
 
 # ============ REST API Endpoints ============
