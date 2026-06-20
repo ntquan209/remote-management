@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import init_db, SessionLocal
 from app.manager import manager
+from app.routes import router as auth_router
 import app.models
 from app.models import AuditLog
 

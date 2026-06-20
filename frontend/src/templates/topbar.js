@@ -4,11 +4,12 @@
  * 📌 CHỨC NĂNG:
  * - Dropdown chọn máy trạm mục tiêu (machine-selector)
  * - Status pill hiển thị trạng thái kết nối (online/offline)
- * - Được render bởi renderer.js khi trang load
+ * - Thông tin user đã đăng nhập + nút đăng xuất
  * 
  * 🔗 LIÊN KẾT:
  * - #machine-select: Dropdown, onChange → gọi onTargetMachineChange()
  * - #global-status-pill: Hiển thị trạng thái, cập nhật bởi machine-selector.js
+ * - #user-info-area: Hiển thị tên + role + nút logout
  */
 
 // Topbar template
@@ -22,6 +23,7 @@ export const topbarTemplate = `
   </div>
   <div class="machine-info">
     <div id="global-status-pill" class="status-pill offline"><div class="blink"></div>Không có thiết bị kết nối</div>
+    <span id="user-info-area" style="margin-left:12px;display:flex;align-items:center;gap:8px"></span>
   </div>
 </header>
 `;
