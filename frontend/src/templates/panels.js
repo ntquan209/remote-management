@@ -1,12 +1,10 @@
 /**
  * Panels Templates - Tất cả các panel nội dung
- * 
- * 📌 CHỨC NĂNG:
+ * * 📌 CHỨC NĂNG:
  * - Định nghĩa HTML cho các panel chức năng
  * - Mỗi panel là một template string (template literal)
  * - Được render bởi renderer.js và ẩn/hiện bởi switchPanel()
- * 
- * 📋 DANH SÁCH PANEL:
+ * * 📋 DANH SÁCH PANEL:
  * 1. dashboardPanel: Thống kê tổng quan
  * 2. appsPanel: Danh sách ứng dụng whitelist
  * 3. processPanel: Danh sách tiến trình đang chạy
@@ -52,9 +50,35 @@ export const appsPanel = `
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Tên ứng dụng</th><th>Trạng thái</th><th>Tác vụ tương tác</th></tr></thead>
+      <thead><tr><th>Tên ứng dụng</th><th>Tiến trình thực thi</th><th>Mô tả phạm vi</th><th>Tác vụ tương tác</th></tr></thead>
       <tbody id="apps-table-body">
-        <tr><td colspan="3" style="text-align:center;color:var(--text-muted)">Vui lòng chọn máy trạm để tải danh sách phần mềm Whitelist...</td></tr>
+        <tr>
+          <td><strong>Firefox Web Browser</strong></td>
+          <td><span class="badge bg-primary" style="background: var(--primary); padding: 4px 8px; border-radius: 4px;">firefox</span></td>
+          <td>Trình duyệt mạng phục vụ tra cứu thực hành, an toàn tài nguyên</td>
+          <td>
+            <button class="btn success" style="background:var(--success); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('START', 'firefox')"><i class="ti ti-player-play"></i> Start</button>
+            <button class="btn danger" style="background:var(--danger); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('STOP', 'firefox')"><i class="ti ti-player-stop"></i> Stop</button>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Mousepad Text Editor</strong></td>
+          <td><span class="badge bg-primary" style="background: var(--primary); padding: 4px 8px; border-radius: 4px;">mousepad</span></td>
+          <td>Trình ghi chú soạn thảo mã nguồn nhẹ độc lập, vô hại</td>
+          <td>
+            <button class="btn success" style="background:var(--success); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('START', 'mousepad')"><i class="ti ti-player-play"></i> Start</button>
+            <button class="btn danger" style="background:var(--danger); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('STOP', 'mousepad')"><i class="ti ti-player-stop"></i> Stop</button>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Thunar File Manager</strong></td>
+          <td><span class="badge bg-primary" style="background: var(--primary); padding: 4px 8px; border-radius: 4px;">thunar</span></td>
+          <td>Trình quản lý tệp tin giao diện đồ họa (Bị chặn ở thư mục Root)</td>
+          <td>
+            <button class="btn success" style="background:var(--success); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('START', 'thunar')"><i class="ti ti-player-play"></i> Start</button>
+            <button class="btn danger" style="background:var(--danger); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('STOP', 'thunar')"><i class="ti ti-player-stop"></i> Stop</button>
+          </td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -108,10 +132,10 @@ export const keylogPanel = `
     <span class="panel-subtitle">Chỉ ghi nhận luồng phím trong phạm vi được thông báo công khai</span>
   </div>
   <div class="toolbar">
-    <button class="btn secondary" id="btn-toggle-kl" onclick="toggleKlState()">Tạm dừng bắt phím</button>
+    <button class="btn success" id="btn-toggle-kl" style="background: var(--success); color: white;" onclick="toggleKlState()">Kích hoạt bắt phím thực hành</button>
     <button class="btn danger" onclick="clearKlArea()"><i class="ti ti-trash"></i> Xóa dữ liệu khung view</button>
   </div>
-  <div class="key-feed" id="key-stream-area">
+  <div class="key-feed" id="key-stream-area" style="background:#0f172a; padding:15px; border-radius:6px; min-height:180px; font-family:monospace; color:#38bdf8; word-break:break-all; border:1px solid var(--border-color);">
     <div style="color:var(--text-muted);font-style:italic">Đang chờ phím bấm thời gian thực từ máy trạm...</div>
   </div>
   <div class="consent-box">
@@ -127,8 +151,11 @@ export const filePanel = `
     <span class="panel-title">Truy cập dữ liệu tệp tin (File Sandbox)</span>
     <span class="panel-subtitle">Thư mục cấu hình an toàn: /home/kali/Downloads/</span>
   </div>
-  <div class="file-grid" id="file-list-area">
-    <div style="text-align:center;color:var(--text-muted);padding:14px">Chưa có tệp tin nào được tải lên hoặc đồng bộ...</div>
+  <div class="toolbar" style="margin-bottom: 12px;">
+    <button class="btn" onclick="window.refreshSandboxFiles()"><i class="ti ti-refresh"></i> Tải lại danh sách tệp tin</button>
+  </div>
+  <div class="file-grid" id="file-list-area" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:12px; background:var(--card-bg); padding:16px; border-radius:8px; border:1px solid var(--border-color);">
+    <div style="text-align:center;color:var(--text-muted);padding:14px;grid-column: 1 / -1;">Chưa có tệp tin nào được tải lên hoặc đồng bộ...</div>
   </div>
   <div class="consent-box">
     <i class="ti ti-lock"></i>
@@ -146,8 +173,8 @@ export const webcamPanel = `
     <button class="btn" onclick="triggerWebcam(true)"><i class="ti ti-video"></i> Yêu cầu luồng Webcam</button>
     <button class="btn danger" onclick="triggerWebcam(false)">Tắt Webcam</button>
   </div>
-  <div class="webcam-box" id="webcam-display-box">
-    <div style="text-align:center;color:var(--text-muted)">
+  <div class="webcam-box" id="webcam-display-box" style="width:100%; border-radius:8px; overflow:hidden; background:#000; min-height:280px; margin-top:15px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color);">
+    <div id="webcam-placeholder-area" style="text-align:center;color:var(--text-muted)">
       <i class="ti ti-camera-off" style="font-size:40px;margin-bottom:8px"></i>
       <div>Webcam đang đóng</div>
     </div>

