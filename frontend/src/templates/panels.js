@@ -42,6 +42,7 @@ export const dashboardPanel = `
 </div>
 `;
 
+// 🎯 CHỈ THAY ĐỔI PANEL NÀY: Dồn nút Start/Stop cũ thành 1 nút duy nhất + Thêm cột Trạng thái
 export const appsPanel = `
 <div class="panel" id="panel-apps">
   <div class="panel-hdr">
@@ -50,33 +51,37 @@ export const appsPanel = `
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Tên ứng dụng</th><th>Tiến trình thực thi</th><th>Mô tả phạm vi</th><th>Tác vụ tương tác</th></tr></thead>
-      <tbody id="apps-table-body">
+      <thead>
         <tr>
+          <th>Tên ứng dụng</th>
+          <th>Tiến trình thực thi</th>
+          <th>Trạng thái</th>
+          <th>Tác vụ tương tác</th>
+        </tr>
+      </thead>
+      <tbody id="apps-table-body">
+        <tr data-app="firefox">
           <td><strong>Firefox Web Browser</strong></td>
           <td><span class="badge bg-primary" style="background: var(--primary); padding: 4px 8px; border-radius: 4px;">firefox</span></td>
-          <td>Trình duyệt mạng phục vụ tra cứu thực hành, an toàn tài nguyên</td>
+          <td class="app-status"><span class="badge-status stop" style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 8px;border-radius:4px;">Đang tắt</span></td>
           <td>
-            <button class="btn success" style="background:var(--success); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('START', 'firefox')"><i class="ti ti-player-play"></i> Start</button>
-            <button class="btn danger" style="background:var(--danger); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('STOP', 'firefox')"><i class="ti ti-player-stop"></i> Stop</button>
+            <button class="btn success btn-toggle-app" style="background:var(--success); color:white; border:none; padding:5px 12px; border-radius:4px; cursor:pointer;" onclick="window.toggleAppAction('firefox')"><i class="ti ti-player-play"></i> Khởi chạy</button>
           </td>
         </tr>
-        <tr>
+        <tr data-app="mousepad">
           <td><strong>Mousepad Text Editor</strong></td>
           <td><span class="badge bg-primary" style="background: var(--primary); padding: 4px 8px; border-radius: 4px;">mousepad</span></td>
-          <td>Trình ghi chú soạn thảo mã nguồn nhẹ độc lập, vô hại</td>
+          <td class="app-status"><span class="badge-status stop" style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 8px;border-radius:4px;">Đang tắt</span></td>
           <td>
-            <button class="btn success" style="background:var(--success); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('START', 'mousepad')"><i class="ti ti-player-play"></i> Start</button>
-            <button class="btn danger" style="background:var(--danger); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('STOP', 'mousepad')"><i class="ti ti-player-stop"></i> Stop</button>
+            <button class="btn success btn-toggle-app" style="background:var(--success); color:white; border:none; padding:5px 12px; border-radius:4px; cursor:pointer;" onclick="window.toggleAppAction('mousepad')"><i class="ti ti-player-play"></i> Khởi chạy</button>
           </td>
         </tr>
-        <tr>
+        <tr data-app="thunar">
           <td><strong>Thunar File Manager</strong></td>
           <td><span class="badge bg-primary" style="background: var(--primary); padding: 4px 8px; border-radius: 4px;">thunar</span></td>
-          <td>Trình quản lý tệp tin giao diện đồ họa (Bị chặn ở thư mục Root)</td>
+          <td class="app-status"><span class="badge-status stop" style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 8px;border-radius:4px;">Đang tắt</span></td>
           <td>
-            <button class="btn success" style="background:var(--success); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('START', 'thunar')"><i class="ti ti-player-play"></i> Start</button>
-            <button class="btn danger" style="background:var(--danger); color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;" onclick="window.triggerApp('STOP', 'thunar')"><i class="ti ti-player-stop"></i> Stop</button>
+            <button class="btn success btn-toggle-app" style="background:var(--success); color:white; border:none; padding:5px 12px; border-radius:4px; cursor:pointer;" onclick="window.toggleAppAction('thunar')"><i class="ti ti-player-play"></i> Khởi chạy</button>
           </td>
         </tr>
       </tbody>
@@ -179,11 +184,7 @@ export const webcamPanel = `
       <div>Webcam đang đóng</div>
     </div>
   </div>
-  <div class="consent-box">
-    <i class="ti ti-user-check"></i>
-    <div><strong>Yêu cầu bắt buộc sự đồng ý (Consent Model):</strong> Luồng webcam hoàn toàn không thể kích hoạt lén. Một hộp thoại popup xác nhận rõ ràng sẽ hiện bên phía sinh viên. Nếu chọn từ chối, Server sẽ lập tức hủy phiên làm việc.</div>
-  </div>
-</div>
+  ...
 `;
 
 export const powerPanel = `
@@ -207,9 +208,6 @@ export const powerPanel = `
 </div>
 `;
 
-/**
- * Admin Panel - Quản trị hệ thống (Chỉ dành cho admin)
- */
 export const adminPanel = `
 <div class="panel" id="panel-admin">
   <div class="panel-hdr">

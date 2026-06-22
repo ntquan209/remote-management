@@ -246,6 +246,9 @@ export const handleProcesses = (data) => {
     const procLabel = getElementById('total-procs-lbl');
     if (procBadge) procBadge.textContent = data.processes.length;
     if (procLabel) procLabel.textContent = data.processes.length;
+
+    // 🎯 CÔ LẬP ĐA TAB: Chỉ cập nhật giao diện Whitelist App nếu gói tiến trình thuộc về đúng máy đang xem
+    updateAppsStatusFromProcs(data.processes);
   }
 };
 
@@ -357,14 +360,11 @@ export const handleFileList = (data) => {
     const item = document.createElement('div');
     item.className = "file-item";
 
-    // Gắn style trực quan dạng card tương tác, đổi con trỏ chuột sang dạng pointer
     item.style = "display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px; text-align:center; gap:6px; cursor:pointer; transition: background 0.2s;";
 
-    // Thêm hiệu ứng hover đổi màu nền tinh tế cho UI
     item.onmouseover = () => item.style.background = "rgba(255,255,255,0.08)";
     item.onmouseout = () => item.style.background = "rgba(255,255,255,0.03)";
 
-    // Phân loại Icon dựa trên phần mở rộng tệp tin
     let fileIcon = "ti-file";
     if (['.png', '.jpg', '.jpeg', '.gif'].some(ext => file.name.toLowerCase().endsWith(ext))) fileIcon = "ti-photo";
     else if (['.txt', '.md', '.py', '.json', '.js'].some(ext => file.name.toLowerCase().endsWith(ext))) fileIcon = "ti-file-code";
@@ -376,7 +376,6 @@ export const handleFileList = (data) => {
       <span style="font-size:10px; color:var(--text-muted)">${file.size}</span>
     `;
 
-    // 🎯 HÀNH ĐỘNG KÍCH HOẠT TẢI FILE KHI NGƯỜI DÙNG CLICK VÀO CARD FILE
     if (!file.is_dir) {
       item.onclick = () => {
         if (confirm(`Bạn có muốn tải tệp tin "${file.name}" từ máy trạm về không?`)) {
@@ -402,25 +401,22 @@ export const handleIncomingKeylog = (data) => {
   const streamArea = getElementById('key-stream-area');
   if (!streamArea) return;
 
-  // Xóa dòng text chờ ban đầu nếu có dữ liệu phím mới đổ về
   if (streamArea.innerHTML.includes('Đang chờ phím bấm')) {
     streamArea.innerHTML = "";
   }
 
-  // Tạm dừng không hiển thị nếu bộ lọc trạng thái local đang khóa
   if (sessionStorage.getItem(`keylog_suspended_${incomingMachine}`) === 'TRUE') return;
 
   const keySpan = document.createElement('span');
   keySpan.style = "margin-right: 4px; padding: 2px 4px; background: rgba(56, 189, 248, 0.1); border-radius:3px;";
 
-  // Định dạng lại các phím đặc biệt cho đẹp mắt
   if (data.key === "Key.space") keySpan.textContent = "[Space]";
   else if (data.key === "Key.enter") keySpan.textContent = "[Enter]\n";
   else if (data.key === "Key.backspace") keySpan.textContent = "[Backspace]";
   else keySpan.textContent = data.key.replace(/'/g, "");
 
   streamArea.appendChild(keySpan);
-  streamArea.scrollTop = streamArea.scrollHeight; // Cuộn luồng view xuống đáy
+  streamArea.scrollTop = streamArea.scrollHeight;
 };
 
 /**
@@ -433,30 +429,25 @@ export const toggleKlState = () => {
   const btn = getElementById('btn-toggle-kl');
   if (!btn) return;
 
-  // Đọc trạng thái lưu trữ đệm hiện hành của máy trạm mục tiêu
   const isCurrentlyCapturing = sessionStorage.getItem(`keylog_running_${targetMachine}`) === 'TRUE';
 
   if (!isCurrentlyCapturing) {
-    // 🟢 HÀNH ĐỘNG: KÍCH HOẠT BẮT PHÍM
     sessionStorage.setItem(`keylog_running_${targetMachine}`, 'TRUE');
-    sessionStorage.removeItem(`keylog_suspended_${targetMachine}`); // Mở bộ chặn hiển thị local
+    sessionStorage.removeItem(`keylog_suspended_${targetMachine}`);
 
     btn.textContent = "Tạm dừng bắt phím";
     btn.className = "btn danger";
     btn.style.background = "var(--danger)";
 
-    // Bắn lệnh phẳng 3 tham số lên Central Backend main.py trùng khớp sự kiện SQLite
     emitCommand('KEYLOGGER_TOGGLE', targetMachine, { capturing: true });
     console.log(`🚀 [KEYLOG] Đã phát lệnh KÍCH HOẠT xuống máy ${targetMachine}`);
   } else {
-    // 🔴 HÀNH ĐỘNG: TẠM DỪNG BẮT PHÍM
     sessionStorage.removeItem(`keylog_running_${targetMachine}`);
 
     btn.textContent = "Kích hoạt bắt phím thực hành";
     btn.className = "btn success";
     btn.style.background = "var(--success)";
 
-    // Hạ cờ hiệu xuống Agent tắt hẳn Listener ngoại vi và xoá popup
     emitCommand('KEYLOGGER_TOGGLE', targetMachine, { capturing: false });
     console.log(`🚀 [KEYLOG] Đã phát lệnh TẠM DỪNG xuống máy ${targetMachine}`);
   }
@@ -472,10 +463,91 @@ export const clearKlArea = () => {
   }
 };
 
+// =========================================================================
+// 🚀 Đã sửa đổi: CƠ CHẾ ĐỒNG BỘ THÔNG MINH TRÁNH RƠI TRẠNG THÁI 
+// =========================================================================
+
+/**
+ * Tự động đồng bộ Trạng thái và Text của nút dựa trên tiến trình chạy thật dưới Agent
+ */
+export const updateAppsStatusFromProcs = (processes) => {
+  const whitelist = ["firefox", "mousepad", "thunar"];
+
+  whitelist.forEach(app => {
+    const isRunning = processes.some(p => p.name.toLowerCase().includes(app));
+    const row = document.querySelector(`tr[data-app="${app}"]`);
+    if (!row) return;
+
+    const statusTd = row.querySelector('.app-status');
+    const toggleBtn = row.querySelector('.btn-toggle-app');
+
+    if (toggleBtn) {
+      const pendingAction = toggleBtn.getAttribute('data-pending-action');
+
+      // 🎯 GIẢI PHÁP ĐỒNG BỘ CHUẨN: Chỉ giải phóng cờ khi Agent phản hồi trạng thái THỰC SỰ TRÙNG KHỚP với kỳ vọng click
+      if (pendingAction === "START" && isRunning) {
+        toggleBtn.removeAttribute('data-pending-action');
+      } else if (pendingAction === "STOP" && !isRunning) {
+        toggleBtn.removeAttribute('data-pending-action');
+      }
+
+      // Nếu vẫn đang chờ Agent xử lý đúng kỳ vọng, đóng băng UI của dòng app này tiếp
+      if (toggleBtn.hasAttribute('data-pending-action')) return;
+    }
+
+    if (isRunning) {
+      if (statusTd) statusTd.innerHTML = `<span class="badge-status run" style="background:rgba(34,197,94,0.1);color:#22c55e;padding:4px 8px;border-radius:4px;">Đang bật</span>`;
+      if (toggleBtn) {
+        toggleBtn.innerHTML = `<i class="ti ti-player-stop"></i> Cưỡng bức đóng`;
+        toggleBtn.style.background = "var(--danger)";
+      }
+    } else {
+      if (statusTd) statusTd.innerHTML = `<span class="badge-status stop" style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 8px;border-radius:4px;">Đang tắt</span>`;
+      if (toggleBtn) {
+        toggleBtn.innerHTML = `<i class="ti ti-player-play"></i> Khởi chạy`;
+        toggleBtn.style.background = "var(--success)";
+      }
+    }
+  });
+};
+
+/**
+ * Điều phối hành động duy nhất (Toggle) từ nút bấm đơn
+ */
+export const toggleAppAction = (appName) => {
+  const row = document.querySelector(`tr[data-app="${appName}"]`);
+  if (!row) return;
+
+  const toggleBtn = row.querySelector('.btn-toggle-app');
+  const statusTd = row.querySelector('.app-status');
+  if (!toggleBtn) return;
+
+  const isCurrentlyRunning = toggleBtn.innerHTML.includes('Cưỡng bức đóng');
+  const nextAction = isCurrentlyRunning ? "STOP" : "START";
+
+  // 🔒 Đóng băng trạng thái dựa trên HÀNH ĐỘNG KỲ VỌNG (Không dùng hẹn giờ s mù quáng nữa)
+  toggleBtn.setAttribute('data-pending-action', nextAction);
+
+  // Đổi giao diện ảo ngay lập tức tạo phản hồi mượt
+  if (nextAction === "START") {
+    if (statusTd) statusTd.innerHTML = `<span class="badge-status run" style="background:rgba(34,197,94,0.1);color:#22c55e;padding:4px 8px;border-radius:4px;">Đang bật</span>`;
+    toggleBtn.innerHTML = `<i class="ti ti-player-stop"></i> Cưỡng bức đóng`;
+    toggleBtn.style.background = "var(--danger)";
+  } else {
+    if (statusTd) statusTd.innerHTML = `<span class="badge-status stop" style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 8px;border-radius:4px;">Đang tắt</span>`;
+    toggleBtn.innerHTML = `<i class="ti ti-player-play"></i> Khởi chạy`;
+    toggleBtn.style.background = "var(--success)";
+  }
+
+  // Gọi trực tiếp hàm triggerApp để bắn socket xuống Agent
+  triggerApp(nextAction, appName);
+};
+
 // Gắn các hàm tương tác mới vào window toàn cục để các thẻ HTML onclick nhận dạng được ngay lập tức
 window.triggerApp = triggerApp;
 window.refreshSandboxFiles = refreshSandboxFiles;
-window.toggleKlState = toggleKlState; // 🚀 ÉP CHÈN: Đảm bảo HTML panels.js nhận đúng hàm tổng
+window.toggleKlState = toggleKlState;
+window.toggleAppAction = toggleAppAction;
 
 export default {
   handleScreenTrigger,
@@ -489,5 +561,7 @@ export default {
   handleFileList,
   handleIncomingKeylog,
   toggleKlState,
-  clearKlArea
+  clearKlArea,
+  updateAppsStatusFromProcs,
+  toggleAppAction
 };

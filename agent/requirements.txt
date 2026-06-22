@@ -2,3 +2,5 @@ mss
 psutil
 pillow
 websocket-client
+opencv-python
+pynput
