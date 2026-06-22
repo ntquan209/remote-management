@@ -13,7 +13,7 @@ import {
   keylogPanel,
   filePanel,
   webcamPanel,
-  powerPanel,
+  powerPanel, // 🎯 ĐẢM BẢO: Khớp chính xác tên biến export thường từ panels.js
   adminPanel
 } from './panels.js';
 

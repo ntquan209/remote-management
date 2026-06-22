@@ -165,7 +165,6 @@ export const handleIncomingScreen = (data) => {
   const currentMode = sessionStorage.getItem(`screen_mode_${incomingMachine}`);
   const currentTabOwner = sessionStorage.getItem(`monitor_tab_owner_${incomingMachine}`);
 
-  // Chặn tuyệt đối ảnh Máy A nhảy sang Tab Máy B khi mở song song 2 tab
   if (currentTabOwner !== TAB_SESSION_ID) return;
 
   updateMachineTimestamp(incomingMachine);
@@ -200,12 +199,10 @@ export const handleIncomingScreen = (data) => {
     }
     const cleanBase64 = base64Str.replace(/(\r\n|\n|\r)/gm, "").trim();
 
-    // Nhận diện Header thông minh (Tránh lỗi GPU crash nhuộm xanh thẻ ảnh)
     const mimeType = cleanBase64.charAt(0) === '/' ? 'jpeg' : 'png';
     imgElement.src = `data:image/${mimeType};base64,${cleanBase64}`;
 
     if (currentMode === 'LIVE' && sessionStorage.getItem(`screen_mode_${incomingMachine}`) === 'LIVE') {
-      // Tốc độ điều hòa 180ms an toàn tuyệt đối cho card mạng ảo phòng Lab
       setTimeout(() => {
         if (sessionStorage.getItem(`screen_mode_${incomingMachine}`) === 'LIVE') {
           emitCommand('SCREENSHOT', incomingMachine, {});
@@ -247,7 +244,6 @@ export const handleProcesses = (data) => {
     if (procBadge) procBadge.textContent = data.processes.length;
     if (procLabel) procLabel.textContent = data.processes.length;
 
-    // 🎯 CÔ LẬP ĐA TAB: Chỉ cập nhật giao diện Whitelist App nếu gói tiến trình thuộc về đúng máy đang xem
     updateAppsStatusFromProcs(data.processes);
   }
 };
@@ -340,7 +336,6 @@ export const refreshSandboxFiles = () => {
 
 /**
  * Render mảng danh sách tệp dội về lên lưới hiển thị
- * (Gắn thêm trình xử lý click chuột để ra lệnh tải xuống)
  */
 export const handleFileList = (data) => {
   const incomingMachine = data.machine_name;
@@ -420,7 +415,7 @@ export const handleIncomingKeylog = (data) => {
 };
 
 /**
- * 🎯 ĐÃ ĐỒNG BỘ: SỬA LỖI ĐIỀU KHIỂN BẬT/TẮT VÀ ĐỔI CHỮ NÚT BẤM REALTIME KHỚP BACKEND
+ * SỬA LỖI ĐIỀU KHIỂN BẬT/TẮT VÀ ĐỔI CHỮ NÚT BẤM REALTIME KHỚP BACKEND
  */
 export const toggleKlState = () => {
   const targetMachine = getTargetMachine();
@@ -463,10 +458,6 @@ export const clearKlArea = () => {
   }
 };
 
-// =========================================================================
-// 🚀 Đã sửa đổi: CƠ CHẾ ĐỒNG BỘ THÔNG MINH TRÁNH RƠI TRẠNG THÁI 
-// =========================================================================
-
 /**
  * Tự động đồng bộ Trạng thái và Text của nút dựa trên tiến trình chạy thật dưới Agent
  */
@@ -484,14 +475,12 @@ export const updateAppsStatusFromProcs = (processes) => {
     if (toggleBtn) {
       const pendingAction = toggleBtn.getAttribute('data-pending-action');
 
-      // 🎯 GIẢI PHÁP ĐỒNG BỘ CHUẨN: Chỉ giải phóng cờ khi Agent phản hồi trạng thái THỰC SỰ TRÙNG KHỚP với kỳ vọng click
       if (pendingAction === "START" && isRunning) {
         toggleBtn.removeAttribute('data-pending-action');
       } else if (pendingAction === "STOP" && !isRunning) {
         toggleBtn.removeAttribute('data-pending-action');
       }
 
-      // Nếu vẫn đang chờ Agent xử lý đúng kỳ vọng, đóng băng UI của dòng app này tiếp
       if (toggleBtn.hasAttribute('data-pending-action')) return;
     }
 
@@ -525,10 +514,8 @@ export const toggleAppAction = (appName) => {
   const isCurrentlyRunning = toggleBtn.innerHTML.includes('Cưỡng bức đóng');
   const nextAction = isCurrentlyRunning ? "STOP" : "START";
 
-  // 🔒 Đóng băng trạng thái dựa trên HÀNH ĐỘNG KỲ VỌNG (Không dùng hẹn giờ s mù quáng nữa)
   toggleBtn.setAttribute('data-pending-action', nextAction);
 
-  // Đổi giao diện ảo ngay lập tức tạo phản hồi mượt
   if (nextAction === "START") {
     if (statusTd) statusTd.innerHTML = `<span class="badge-status run" style="background:rgba(34,197,94,0.1);color:#22c55e;padding:4px 8px;border-radius:4px;">Đang bật</span>`;
     toggleBtn.innerHTML = `<i class="ti ti-player-stop"></i> Cưỡng bức đóng`;
@@ -539,8 +526,36 @@ export const toggleAppAction = (appName) => {
     toggleBtn.style.background = "var(--success)";
   }
 
-  // Gọi trực tiếp hàm triggerApp để bắn socket xuống Agent
   triggerApp(nextAction, appName);
+};
+
+/**
+ * 🎯 ĐÃ VÁ LỖI MẠNG: Hàm tiếp nhận lệnh Kill Process trùng khớp viết thường 'kill_process' với Agent
+ */
+export const handleKillProcess = (pid, procName) => {
+  const targetMachine = getTargetMachine();
+  if (!targetMachine) return alert("Vui lòng chọn một máy trạm cụ thể trước!");
+
+  if (confirm(`⚠️ Bạn có chắc chắn muốn cưỡng bức đóng tiến trình [${procName}] (PID: ${pid}) trên máy [${targetMachine}] không?`)) {
+    // 🎯 ĐỔI TÊN LỆNH: Từ 'KILL_PROCESS' thành 'kill_process' viết thường để Agent hiểu được
+    emitCommand('kill_process', targetMachine, { pid: parseInt(pid), proc_name: procName });
+    console.log(`🚀 [PROCESS] Đã phát lệnh KILL tiến trình ${procName} (PID: ${pid}) xuống máy ${targetMachine}`);
+  }
+};
+
+/**
+ * 🎯 ĐÃ BỔ SUNG: Hàm tiếp nhận lệnh tương tác nguồn điện tự nhận diện từ click ở panels.js
+ */
+export const handlePowerCommand = (type) => {
+  const targetMachine = getTargetMachine();
+  if (!targetMachine) return alert("Vui lòng cấu hình chọn máy trạm phòng Lab trước khi thực hiện!");
+
+  const label = type === 'RESTART' ? 'Khởi động lại' : 'Tắt nguồn';
+  if (confirm(`⚠️ CẢNH BÁO: Bạn chắc chắn muốn phát lệnh [${label}] xuống máy [${targetMachine}] chứ?`)) {
+    // 🎯 ĐỔI TÊN LỆNH: Gửi trực tiếp chữ viết thường 'restart' / 'shutdown' đồng bộ hoàn toàn với logic của agent.py
+    emitCommand(type.toLowerCase(), targetMachine, {});
+    console.log(`🚀 [POWER] Đã phát lệnh ${type.toLowerCase()} xuống máy ${targetMachine}`);
+  }
 };
 
 // Gắn các hàm tương tác mới vào window toàn cục để các thẻ HTML onclick nhận dạng được ngay lập tức
@@ -548,6 +563,8 @@ window.triggerApp = triggerApp;
 window.refreshSandboxFiles = refreshSandboxFiles;
 window.toggleKlState = toggleKlState;
 window.toggleAppAction = toggleAppAction;
+window.handleKillProcess = handleKillProcess;
+window.triggerPower = handlePowerCommand; // 🎯 KHÔI PHỤC EXPOSE: Khớp với onclick="window.triggerPower(...)" bên panels.js
 
 export default {
   handleScreenTrigger,
@@ -563,5 +580,7 @@ export default {
   toggleKlState,
   clearKlArea,
   updateAppsStatusFromProcs,
-  toggleAppAction
+  toggleAppAction,
+  handleKillProcess,
+  handlePowerCommand
 };

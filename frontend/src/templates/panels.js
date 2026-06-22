@@ -154,7 +154,7 @@ export const filePanel = `
 <div class="panel" id="panel-files">
   <div class="panel-hdr">
     <span class="panel-title">Truy cập dữ liệu tệp tin (File Sandbox)</span>
-    <span class="panel-subtitle">Thư mục cấu hình an toàn: /home/kali/Downloads/</span>
+    <span class="panel-subtitle">Thư mục cấu hình An toàn: /home/kali/Downloads/</span>
   </div>
   <div class="toolbar" style="margin-bottom: 12px;">
     <button class="btn" onclick="window.refreshSandboxFiles()"><i class="ti ti-refresh"></i> Tải lại danh sách tệp tin</button>
@@ -184,28 +184,38 @@ export const webcamPanel = `
       <div>Webcam đang đóng</div>
     </div>
   </div>
-  ...
+</div>
 `;
 
+// 🎯 ĐÃ VÁ LỖI HIỂN THỊ: Khớp id="panel-power" cho JS, bọc id="power-panel" cho CSS ngoài và làm sạch ký tự ẩn
 export const powerPanel = `
-<div class="panel" id="power-panel">
-  <div class="panel-hdr">
-    <span class="panel-title">Điều khiển nguồn điện máy tính trạm</span>
-    <span class="panel-subtitle">Hành động nhạy cảm - Cần thực hiện có trách nhiệm</span>
-  </div>
-  <div class="power-grid">
-    <div class="power-card animate" onclick="triggerPower('RESTART')">
-      <div class="power-icon" style="color:var(--warning)"><i class="ti ti-refresh"></i></div>
-      <div class="power-name">Khởi động lại (Restart)</div>
-      <div class="power-desc">Làm mới hệ điều hành máy trạm</div>
+<div class="panel" id="panel-power">
+  <div id="power-panel" style="width: 100%; height: 100%;">
+    <div class="panel-hdr">
+      <span class="panel-title">Điều khiển nguồn điện máy tính trạm</span>
+      <span class="panel-subtitle">Hành động nhạy cảm - Cần thực hiện có trách nhiệm</span>
     </div>
-    <div class="power-card danger-zone" onclick="triggerPower('SHUTDOWN')">
-      <div class="power-icon" style="color:var(--danger)"><i class="ti ti-power"></i></div>
-      <div class="power-name">Tắt máy nguồn từ xa (Shutdown)</div>
-      <div class="power-desc">Sập nguồn hoàn toàn máy trạm mục tiêu</div>
+    <div class="power-grid">
+      <div class="power-card animate" onclick="window.triggerPower('RESTART')">
+        <div class="power-icon" style="color:var(--warning)"><i class="ti ti-refresh"></i></div>
+        <div class="power-name">Khởi động lại (Restart)</div>
+        <div class="power-desc">Làm mới hệ điều hành máy trạm</div>
+      </div>
+      <div class="power-card danger-zone" onclick="window.triggerPower('SHUTDOWN')">
+        <div class="power-icon" style="color:var(--danger)"><i class="ti ti-power"></i></div>
+        <div class="power-name">Tắt máy nguồn từ xa (Shutdown)</div>
+        <div class="power-desc">Sập nguồn hoàn toàn máy trạm mục tiêu</div>
+      </div>
     </div>
   </div>
 </div>
+
+<style>
+  /* Ghi đè bắt buộc để khôi phục layout từ file CSS ngoài của bạn */
+  #panel-power.active #power-panel {
+    display: block !important;
+  }
+</style>
 `;
 
 export const adminPanel = `
