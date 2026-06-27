@@ -118,6 +118,76 @@ def _set_v4l2_mjpg():
     return False
 
 
+def _log_v4l2_info():
+    try:
+        r = subprocess.run(
+            ["v4l2-ctl", "-d", "/dev/video0", "--list-formats-ext"],
+            capture_output=True, text=True, timeout=5
+        )
+        if r.returncode == 0:
+            out = r.stdout
+            print("── [V4L2] formats-ext ──")
+            for line in out.splitlines()[:60]:
+                if line.strip():
+                    print(f"   {line}")
+        r2 = subprocess.run(
+            ["v4l2-ctl", "-d", "/dev/video0"],
+            capture_output=True, text=True, timeout=5
+        )
+        if r2.returncode == 0:
+            for line in r2.stdout.splitlines()[:40]:
+                if line.strip():
+                    print(f"   {line}")
+    except Exception:
+        pass
+
+
+def _iter_ffmpeg_frames(proc):
+    buf = b''
+    while True:
+        chunk = proc.stdout.read(65536)
+        if not chunk:
+            break
+        buf += chunk
+        while True:
+            start = buf.find(b'\xff\xd8')
+            if start == -1:
+                buf = b''
+                break
+            end = buf.find(b'\xff\xd9', start + 2)
+            if end == -1:
+                break
+            end += 2
+            yield buf[start:end]
+            buf = buf[end:]
+
+
+def _try_ffmpeg_pipe():
+    try:
+        proc = subprocess.Popen(
+            [
+                "ffmpeg",
+                "-f", "v4l2",
+                "-i", "/dev/video0",
+                "-vf", "scale=640:480",
+                "-f", "image2pipe",
+                "-vcodec", "mjpeg",
+                "-q:v", "4",
+                "pipe:1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
+        print("  ✓ ffmpeg pipe MJPEG")
+        return proc
+    except FileNotFoundError:
+        print("⚠️ ffmpeg không có sẵn")
+    except Exception as e:
+        print(f"⚠️ ffmpeg pipe lỗi: {e}")
+    return None
+
+
 def _try_gstreamer_capture():
     try:
         pipeline = (
@@ -206,6 +276,8 @@ def webcam_stream_worker(ws):
     time.sleep(0.5)
 
     cap = None
+    ffmpeg_proc = None
+    use_ffmpeg = False
 
     cap = _try_gstreamer_capture()
     if cap is None:
@@ -220,55 +292,86 @@ def webcam_stream_worker(ws):
             cap = None
 
     if not cap or not cap.isOpened():
-        print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
-        print("💡 Hãy kiểm tra:")
-        print("   - Camera có được kết nối không?")
-        print("   - Thiết bị /dev/video0 có tồn tại không?")
-        print("   - Quyền truy cập camera (sudo usermod -aG video $USER)")
-        webcam_streaming = False
-        return
+        _log_v4l2_info()
+        ffmpeg_proc = _try_ffmpeg_pipe()
+        if ffmpeg_proc is None:
+            print("❌ [WEBCAM] Không thể mở thiết bị ghi hình")
+            print("💡 Hãy kiểm tra:")
+            print("   - Camera có được kết nối không?")
+            print("   - Thiết bị /dev/video0 có tồn tại không?")
+            print("   - Quyền truy cập camera (sudo usermod -aG video $USER)")
+            webcam_streaming = False
+            return
+        use_ffmpeg = True
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 8)
-    time.sleep(0.5)
+    if use_ffmpeg:
+        frame_iter = _iter_ffmpeg_frames(ffmpeg_proc)
+        try:
+            jpeg = next(frame_iter)
+            frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                raise ValueError("imdecode empty")
+            print(f"📷 [WEBCAM] Frame shape={frame.shape} (ffmpeg)")
+        except Exception:
+            if ffmpeg_proc:
+                ffmpeg_proc.kill()
+            print("❌ [WEBCAM] ffmpeg không trả về frame hợp lệ")
+            webcam_streaming = False
+            return
+        test_frame = frame
+    else:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 8)
+        time.sleep(0.5)
+        for _ in range(5):
+            cap.read()
+        time.sleep(0.2)
 
-    for _ in range(5):
-        cap.read()
-    time.sleep(0.2)
+        ret, test_frame = cap.read()
+        if not ret or test_frame is None:
+            cap.release()
+            print("❌ [WEBCAM] Không đọc được frame")
+            webcam_streaming = False
+            return
 
-    ret, test_frame = cap.read()
-    if not ret or test_frame is None:
-        print("❌ [WEBCAM] Camera mở được nhưng không đọc được frame")
-        cap.release()
-        webcam_streaming = False
-        return
+        fourcc = cap.get(cv2.CAP_PROP_FOURCC)
+        print(f"📷 [WEBCAM] Frame shape={test_frame.shape}, FOURCC={fourcc:.0f}")
 
-    fourcc = cap.get(cv2.CAP_PROP_FOURCC)
-    print(f"📷 [WEBCAM] Camera hoạt động! Frame shape: {test_frame.shape}, FOURCC={fourcc:.0f}")
+        if len(test_frame.shape) == 3 and test_frame.shape[2] == 3:
+            b, g, r = cv2.split(test_frame)
+            print(f"📷 [WEBCAM] B={b.mean():.1f} G={g.mean():.1f} R={r.mean():.1f}")
+            best, _ = _pick_bgr_permutation(test_frame)
+            test_frame = best
 
-    if len(test_frame.shape) == 3 and test_frame.shape[2] == 3:
-        b, g, r = cv2.split(test_frame)
-        print(f"📷 [WEBCAM] B={b.mean():.1f} G={g.mean():.1f} R={r.mean():.1f}")
-        best, _ = _pick_bgr_permutation(test_frame)
-        test_frame = best
-
-    yuyv_test = _try_yuyv_from_3ch(test_frame)
-    if yuyv_test is not None:
-        test_frame = yuyv_test
+        yuyv_test = _try_yuyv_from_3ch(test_frame)
+        if yuyv_test is not None:
+            test_frame = yuyv_test
 
     fail_count = 0
     while webcam_streaming:
         try:
-            ret, frame = cap.read()
-            if not ret:
-                fail_count += 1
-                print(f"⚠️ [WEBCAM] Không đọc được frame (lần {fail_count})")
-                if fail_count >= 10:
-                    print("❌ [WEBCAM] Quá nhiều lần lỗi, dừng luồng")
-                    break
-                time.sleep(0.2)
-                continue
+            if use_ffmpeg:
+                jpeg = next(frame_iter)
+                frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+                if frame is None:
+                    fail_count += 1
+                    print(f"⚠️ [WEBCAM] ffmpeg decode lỗi (lần {fail_count})")
+                    if fail_count >= 10:
+                        print("❌ [WEBCAM] Dừng luồng")
+                        break
+                    time.sleep(0.2)
+                    continue
+            else:
+                ret, frame = cap.read()
+                if not ret:
+                    fail_count += 1
+                    print(f"⚠️ [WEBCAM] Không đọc được frame (lần {fail_count})")
+                    if fail_count >= 10:
+                        print("❌ [WEBCAM] Quá nhiều lần lỗi, dừng luồng")
+                        break
+                    time.sleep(0.2)
+                    continue
 
             fail_count = 0
             frame_resized = cv2.resize(frame, (640, 480))
@@ -291,12 +394,21 @@ def webcam_stream_worker(ws):
             result = enqueue_send(payload)
             if result:
                 print(f"📤 [WEBCAM] Đã gửi frame ({len(img_base64)} chars base64)")
+        except StopIteration:
+            print("❌ [WEBCAM] ffmpeg kết thúc")
+            break
         except Exception as e:
             print(f"❌ Lỗi truyền gói tin camera: {e}")
             time.sleep(0.5)
         time.sleep(0.35)
 
-    cap.release()
+    if cap:
+        cap.release()
+    if ffmpeg_proc:
+        try:
+            ffmpeg_proc.kill()
+        except Exception:
+            pass
     print("🎥 [WEBCAM] Worker đã kết thúc")
 
 
