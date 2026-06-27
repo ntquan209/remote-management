@@ -104,11 +104,14 @@ def webcam_stream_worker(ws):
     # Thử mở camera với nhiều backend khác nhau
     cap = None
     
-    # Cách 1: Thử V4L2 với định dạng YUYV (raw) - OpenCV sẽ tự encode JPEG
-    print("📷 [WEBCAM] Thử V4L2 + YUYV...")
+    # Cách 1: Thử V4L2 với định dạng MJPEG để đảm bảo màu sắc chính xác
+    print("📷 [WEBCAM] Thử V4L2 + MJPEG...")
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
     if cap.isOpened():
         print(f"  ✓ V4L2 đã mở")
+        # Ép định dạng MJPEG để tránh lỗi màu xanh do YUYV raw
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        print(f"  ✓ Đã set FOURCC=MJPG")
     
     # Cách 2: Thử V4L2 mặc định nếu cách 1 thất bại
     if not cap or not cap.isOpened():
@@ -118,6 +121,8 @@ def webcam_stream_worker(ws):
         cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
         if cap.isOpened():
             print(f"  ✓ V4L2 mặc định đã mở")
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            print(f"  ✓ Đã set FOURCC=MJPG")
     
     # Cách 3: Thử backend mặc định (không chỉ định backend)
     if not cap or not cap.isOpened():
@@ -127,6 +132,8 @@ def webcam_stream_worker(ws):
         cap = cv2.VideoCapture(0)
         if cap.isOpened():
             print(f"  ✓ Backend mặc định đã mở")
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            print(f"  ✓ Đã set FOURCC=MJPG")
     
     # Kiểm tra cuối cùng
     if not cap or not cap.isOpened():
@@ -174,7 +181,7 @@ def webcam_stream_worker(ws):
             print(f"📷 [WEBCAM] Đọc frame {fail_count} lần, kích thước: {frame.shape}")
             fail_count = 0
             frame_resized = cv2.resize(frame, (640, 480))
-            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
             if buffer is None or len(buffer) == 0:
                 print("⚠️ [WEBCAM] JPEG encode thất bại")
                 continue
