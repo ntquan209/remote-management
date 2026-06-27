@@ -64,11 +64,14 @@ def sender_loop():
                 print(f"⚠️ [SENDER] ws_ref[0] là None, bỏ qua message: {cmd}")
                 continue
             try:
-                sock_ok = current_ws.sock is not None and current_ws.sock.connected
+                # WebSocketApp.sock exists when connected, use presence check
+                sock_ok = current_ws.sock is not None
+                if not sock_ok:
+                    print(f"⚠️ [SENDER] Socket not available (ws.sock is None)")
                 if sock_ok:
                     payload_json = json.dumps(payload_dict)
                     current_ws.send(payload_json)
-                    if cmd in ['agent_send_screen', 'agent_download_ready']:
+                    if cmd in ['agent_send_screen', 'agent_download_ready', 'agent_send_webcam']:
                         print(f"✅ [SENDER] Đã gửi thành công {cmd} ({len(payload_json)} bytes)")
                 else:
                     print(f"⚠️ [SENDER] Socket không kết nối (sock={current_ws.sock is not None}), bỏ qua: {cmd}")
@@ -83,6 +86,9 @@ def sender_loop():
 def enqueue_send(payload_dict):
     """Thay thế safe_send: chỉ enqueue, không gửi trực tiếp"""
     try:
+        queue_size = send_queue.qsize()
+        if queue_size > 50:
+            print(f"⚠️ [QUEUE] Hàng đợi lớn: {queue_size} messages đang chờ gửi")
         send_queue.put_nowait(payload_dict)
         return True
     except Exception as e:
@@ -165,6 +171,7 @@ def webcam_stream_worker(ws):
                 time.sleep(0.2)
                 continue
 
+            print(f"📷 [WEBCAM] Đọc frame {fail_count} lần, kích thước: {frame.shape}")
             fail_count = 0
             frame_resized = cv2.resize(frame, (640, 480))
             _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 35])
@@ -177,7 +184,9 @@ def webcam_stream_worker(ws):
                 "machine_name": MACHINE_NAME,
                 "image_base64": img_base64
             }
-            enqueue_send(payload)
+            result = enqueue_send(payload)
+            if result:
+                print(f"📤 [WEBCAM] Đã gửi frame ({len(img_base64)} chars base64)")
         except Exception as e:
             print(f"❌ Lỗi truyền gói tin camera: {e}")
             time.sleep(0.5)
@@ -237,9 +246,13 @@ def on_message(ws, message):
 
         # 🎯 LUỒNG ĐIỀU KHIỂN THIẾT BI GHI HÌNH WEBCAM
         elif command == 'get_webcam_frame':
+            print(f"🎥 [WEBCAM] Nhận lệnh bật webcam, webcam_streaming={webcam_streaming}")
             if not webcam_streaming:
                 webcam_streaming = True
                 threading.Thread(target=webcam_stream_worker, args=(ws,), daemon=True).start()
+                print("✓ [WEBCAM] Đã khởi động luồng webcam")
+            else:
+                print("ℹ️ [WEBCAM] Luồng webcam đã chạy")
             return
 
         elif command == 'stop_webcam_stream':
