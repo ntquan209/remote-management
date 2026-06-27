@@ -95,17 +95,14 @@ def webcam_stream_worker(ws):
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
     print(f"📷 [WEBCAM] Đang mở camera index 0...")
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_FFMPEG)  # Explicitly use FFMPEG backend to avoid V4L2 issues
     print(f"📷 [WEBCAM] isOpened={cap.isOpened()}")
-    if cap.isOpened():
-        print(f"📷 [WEBCAM] Width={cap.get(cv2.CAP_PROP_FRAME_WIDTH)}, Height={cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}, FPS={cap.get(cv2.CAP_PROP_FPS)}")
-
-    cap = cv2.VideoCapture(0)  # Chỉ dùng FFMPEG backend
     if not cap.isOpened():
         print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
         webcam_streaming = False
         return
-
+    
+    print(f"📷 [WEBCAM] Width={cap.get(cv2.CAP_PROP_FRAME_WIDTH)}, Height={cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}, FPS={cap.get(cv2.CAP_PROP_FPS)}")
     # Giảm FPS và chất lượng JPEG để tránh corrupt trên VM
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
