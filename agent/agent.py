@@ -172,7 +172,7 @@ def webcam_stream_worker(ws):
         return
 
     try:
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, False)
+        cap.set(cv2.CAP_PROP_CONVERT_RGB, 0.0)
         ret, raw = cap.read()
         if ret and raw is not None:
             if len(raw.shape) == 3 and raw.shape[2] == 2:
@@ -183,13 +183,13 @@ def webcam_stream_worker(ws):
                 print(f"  ✓ Raw YUYV 2D: {raw.shape}")
             else:
                 print(f"  ⚠️ Raw shape={raw.shape}, dùng auto-convert")
-                cap.set(cv2.CAP_PROP_CONVERT_RGB, True)
+                cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
         else:
             print("  ⚠️ Không đọc raw frame, dùng auto-convert")
-            cap.set(cv2.CAP_PROP_CONVERT_RGB, True)
+            cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
     except Exception as e:
         print(f"  ⚠️ CONVERT_RGB lỗi: {e}, dùng auto-convert")
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, True)
+        cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
