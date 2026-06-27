@@ -36,7 +36,7 @@ export const sidebarTemplate = `
   <a class="nav-item" onclick="switchPanel('procs', this)"><i class="ti ti-cpu"></i> Processes <span class="badge" id="sidebar-proc-badge">0</span></a>
   <a class="nav-item" onclick="switchPanel('screen', this)"><i class="ti ti-device-desktop"></i> Screenshot & Live</a>
   <a class="nav-item" onclick="switchPanel('keylog', this)"><i class="ti ti-keyboard"></i> Keylogger</a>
-  <a class="nav-item" onclick="switchPanel('files', this)"><i class="ti ti-folder-download"></i> File Sandbox</a>
+  <a class="nav-item" onclick="switchPanel('files', this)"><i class="ti ti-folder"></i> File Sandbox</a>
   <a class="nav-item" onclick="switchPanel('webcam', this)"><i class="ti ti-camera"></i> Webcam Stream</a>
   <a class="nav-item" onclick="switchPanel('power', this)"><i class="ti ti-power"></i> Power Control</a>
 </aside>

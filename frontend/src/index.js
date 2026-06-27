@@ -94,8 +94,15 @@ const startApp = async () => {
     // Xử lý nút Kill tiến trình từ xa
     window.handleKillProcess = (pid, name) => {
         if (confirm(`Bạn có chắc chắn muốn kết liễu tiến trình ${name} (PID: ${pid}) không?`)) {
-            emitCommand('KILL_PROCESS', null, { pid: parseInt(pid), name: name });
-            addAuditRow('KILL_PROCESS', pid, `Đã bắn lệnh kết liễu: ${name}`);
+            // Lấy target machine từ dropdown
+            const machineSelect = document.getElementById('machine-select');
+            const targetMachine = machineSelect ? machineSelect.value : null;
+            if (!targetMachine) {
+                alert('Vui lòng chọn máy trạm mục tiêu trước!');
+                return;
+            }
+            emitCommand('KILL_PROCESS', targetMachine, { pid: parseInt(pid), name: name });
+            addAuditRow('KILL_PROCESS', pid, `Đã gửi lệnh kill PID ${pid} tới ${targetMachine}`);
         }
     };
 
@@ -277,32 +284,44 @@ const startApp = async () => {
 
         if (activeSelection && incomingMachine !== activeSelection) return;
 
-        if (data.file_base64 && data.file_name) {
-            try {
-                console.log(`💾 Đang tiến hành giải mã và tải tệp tin: ${data.file_name}`);
+        if (!data.file_base64 || !data.file_name) {
+            console.error("❌ [DOWNLOAD] Thiếu dữ liệu file_name hoặc file_base64 trong phản hồi:", data);
+            alert("Tải file thất bại: Thiếu dữ liệu từ máy trạm!");
+            return;
+        }
 
-                const byteCharacters = atob(data.file_base64);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: 'application/octet-stream' });
+        // Kiểm tra base64 hợp lệ trước khi decode
+        if (typeof data.file_base64 !== 'string' || data.file_base64.length < 10) {
+            console.error("❌ [DOWNLOAD] Dữ liệu base64 không hợp lệ (quá ngắn hoặc không đúng định dạng)");
+            alert("Dữ liệu file từ máy trạm bị hỏng hoặc rỗng!");
+            return;
+        }
 
-                const link = document.createElement('a');
-                link.href = window.URL.createObjectURL(blob);
-                link.download = data.file_name;
+        try {
+            console.log(`💾 Đang tiến hành giải mã và tải tệp tin: ${data.file_name} (${Math.round(data.file_base64.length * 0.75 / 1024)} KB)`);
 
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(link.href);
-
-                console.log(`✅ Đã tải xuống thành công tệp tin: ${data.file_name}`);
-            } catch (error) {
-                console.error("❌ Lỗi xử lý giải mã tệp tin tải về:", error);
-                alert("Không thể giải mã tệp tin dội về từ máy trạm!");
+            // Sử dụng fetch với blob để xử lý base64 an toàn hơn
+            const byteCharacters = atob(data.file_base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
             }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/octet-stream' });
+
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = data.file_name;
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(link.href);
+
+            console.log(`✅ Đã tải xuống thành công tệp tin: ${data.file_name}`);
+        } catch (error) {
+            console.error("❌ Lỗi xử lý giải mã tệp tin tải về:", error);
+            alert(`Không thể giải mã tệp tin "${data.file_name}" từ máy trạm! Lỗi: ${error.message}`);
         }
     });
 
@@ -311,7 +330,56 @@ const startApp = async () => {
     });
 
     onEvent('error', (data) => {
-        console.error("❌ Lỗi từ hệ thống Agent:", data);
+        console.error("❌ Lỗi từ hệ thống:", data);
+        // Hiển thị thông báo lỗi trực quan trên giao diện
+        const msg = data.message || (typeof data === 'string' ? data : JSON.stringify(data));
+        if (msg) {
+            const errMsg = data.message || msg || '';
+            // Nếu là lỗi máy trạm offline, reset screen display
+            if (errMsg.includes('không kết nối') || errMsg.includes('offline') || errMsg.includes('offline')) {
+                const display = document.getElementById('screen-display-area');
+                if (display) {
+                    display.innerHTML = `
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:10px; padding: 40px 0;">
+                            <i class="ti ti-cloud-off" style="font-size:48px; color:var(--danger)"></i>
+                            <span style="color:var(--danger); font-weight:600">${data.message}</span>
+                        </div>`;
+                }
+            }
+            
+            // Nếu là lỗi keylogger không khả dụng, hiển thị cảnh báo trong key-stream-area
+            if (msg.includes('Keylogger') || msg.includes('keylogger')) {
+                const klArea = document.getElementById('key-stream-area');
+                if (klArea) {
+                    klArea.innerHTML = `<div style="color:var(--danger);font-weight:600;padding:10px;background:rgba(239,68,68,0.1);border-radius:4px;border:1px solid rgba(239,68,68,0.3);">
+                        <i class="ti ti-alert-triangle"></i> ⚠️ ${msg}
+                    </div>`;
+                }
+            }
+            
+            // Nếu là lỗi file download
+            if (msg.includes('file') || msg.includes('File')) {
+                const fileArea = document.getElementById('file-list-area');
+                if (fileArea) {
+                    fileArea.innerHTML = `<div style="text-align:center;color:var(--danger);padding:14px;grid-column:1/-1;background:rgba(239,68,68,0.1);border-radius:6px;">
+                        <i class="ti ti-alert-triangle"></i> ⚠️ ${msg}
+                    </div>`;
+                }
+            }
+            
+            // Luôn hiển thị toast thông báo trên topbar (dùng notification API nếu có)
+            try {
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;top:16px;right:16px;background:rgba(239,68,68,0.9);color:white;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;max-width:400px;box-shadow:0 8px 24px rgba(0,0,0,0.4);animation:slideIn 0.3s ease;';
+                toast.textContent = `⚠️ ${msg}`;
+                document.body.appendChild(toast);
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                    toast.style.transition = 'opacity 0.5s';
+                    setTimeout(() => toast.remove(), 500);
+                }, 8000);  // Thời gian toast lâu hơn (8s thay vì 5s)
+            } catch (e) {}
+        }
     });
 
     // =============================================

@@ -161,15 +161,23 @@ export const handleScreenTrigger = (type) => {
  */
 export const handleIncomingScreen = (data) => {
   const incomingMachine = data.machine_name;
+  console.log(`🖼️ [FRONTEND] Nhận dữ liệu màn hình từ máy: ${incomingMachine}`);
 
   const currentMode = sessionStorage.getItem(`screen_mode_${incomingMachine}`);
   const currentTabOwner = sessionStorage.getItem(`monitor_tab_owner_${incomingMachine}`);
+  
+  console.log(`🖼️ [FRONTEND] currentMode="${currentMode}" tabOwner="${currentTabOwner}" TAB_SESSION_ID="${TAB_SESSION_ID}"`);
 
-  if (currentTabOwner !== TAB_SESSION_ID) return;
+  if (currentTabOwner !== TAB_SESSION_ID) {
+    console.log(`🖼️ [FRONTEND] Bỏ qua: tab owner mismatch (${currentTabOwner} !== ${TAB_SESSION_ID})`);
+    return;
+  }
 
   updateMachineTimestamp(incomingMachine);
 
   const activeSelection = getTargetMachine();
+  console.log(`🖼️ [FRONTEND] activeSelection="${activeSelection}" incomingMachine="${incomingMachine}"`);
+  
   if (incomingMachine !== activeSelection) {
     if (currentMode === 'LIVE' && sessionStorage.getItem(`screen_mode_${incomingMachine}`) === 'LIVE') {
       setTimeout(() => {
@@ -180,27 +188,39 @@ export const handleIncomingScreen = (data) => {
   }
 
   const display = getElementById('screen-display-area');
-  if (!display) return;
-
-  let imgElement = display.querySelector('#live-stream-img');
-  if (!imgElement) {
-    display.innerHTML = `
-      <div style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #000; min-height: 250px; display: flex; align-items: center; justify-content: center;">
-        <img id="live-stream-img" style="width:100%; height:auto; display:block; object-fit:contain; max-height:75vh;" alt="Agent Screen Stream" />
-      </div>
-    `;
-    imgElement = display.querySelector('#live-stream-img');
+  if (!display) {
+    console.log(`🖼️ [FRONTEND] Không tìm thấy #screen-display-area`);
+    return;
   }
 
-  if (imgElement && data.image_base64) {
+  if (data.image_base64) {
     let base64Str = data.image_base64;
+    console.log(`🖼️ [FRONTEND] base64 length=${base64Str.length} first20="${base64Str.substring(0, 20)}"`);
+    
     if (base64Str.startsWith("b'") || base64Str.startsWith('b"')) {
       base64Str = base64Str.substring(2, base64Str.length - 1);
     }
     const cleanBase64 = base64Str.replace(/(\r\n|\n|\r)/gm, "").trim();
-
     const mimeType = cleanBase64.charAt(0) === '/' ? 'jpeg' : 'png';
-    imgElement.src = `data:image/${mimeType};base64,${cleanBase64}`;
+    
+    // 🎯 ĐƠN GIẢN HÓA HOÀN TOÀN: chỉ set innerHTML với img trực tiếp
+    // Không dùng container có nền đen, không dùng querySelector
+    display.innerHTML = '';  // Xóa toàn bộ nội dung cũ
+    const dataUrl = `data:image/${mimeType};base64,${cleanBase64}`;
+    console.log(`🖼️ [FRONTEND] dataUrl length=${dataUrl.length}`);
+    
+    // Tạo img element mới trực tiếp
+    const newImg = document.createElement('img');
+    newImg.id = 'live-stream-img';
+    newImg.src = dataUrl;
+    newImg.style.cssText = 'width:100%; height:auto; display:block; max-height:80vh; object-fit:contain;';
+    display.style.cssText = 'width:100%; min-height:300px; background:#1a1a2e; display:flex; align-items:center; justify-content:center; overflow:hidden;';
+    display.appendChild(newImg);
+    
+    newImg.onload = () => {
+      console.log(`🖼️ [FRONTEND] Ảnh đã load! Kích thước thực: ${newImg.naturalWidth}x${newImg.naturalHeight}`);
+    };
+    newImg.onerror = (e) => console.error(`🖼️ [FRONTEND] LỖI load ảnh:`, e);
 
     if (currentMode === 'LIVE' && sessionStorage.getItem(`screen_mode_${incomingMachine}`) === 'LIVE') {
       setTimeout(() => {
@@ -209,6 +229,8 @@ export const handleIncomingScreen = (data) => {
         }
       }, 180);
     }
+  } else {
+    console.log(`🖼️ [FRONTEND] imgElement=${!!imgElement} image_base64=${!!data.image_base64}`);
   }
 };
 
@@ -361,12 +383,43 @@ export const handleFileList = (data) => {
     item.onmouseout = () => item.style.background = "rgba(255,255,255,0.03)";
 
     let fileIcon = "ti-file";
-    if (['.png', '.jpg', '.jpeg', '.gif'].some(ext => file.name.toLowerCase().endsWith(ext))) fileIcon = "ti-photo";
-    else if (['.txt', '.md', '.py', '.json', '.js'].some(ext => file.name.toLowerCase().endsWith(ext))) fileIcon = "ti-file-code";
-    else if (file.is_dir) fileIcon = "ti-folder";
+    let iconColor = "var(--primary)";
+    const ext = file.name.toLowerCase().split('.').pop();
+    
+    if (file.is_dir) {
+        fileIcon = "ti-folder";
+        iconColor = "#fbbf24";
+    } else if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'].includes(ext)) {
+        fileIcon = "ti-photo";
+        iconColor = "#4ade80";
+    } else if (['txt', 'md', 'log'].includes(ext)) {
+        fileIcon = "ti-file-text";
+        iconColor = "#38bdf8";
+    } else if (['py', 'js', 'ts', 'json', 'xml', 'html', 'css', 'php', 'java', 'c', 'cpp', 'h'].includes(ext)) {
+        fileIcon = "ti-file-code";
+        iconColor = "#fbbf24";
+    } else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+        fileIcon = "ti-file-zip";
+        iconColor = "#c084fc";
+    } else if (['pdf'].includes(ext)) {
+        fileIcon = "ti-file-pdf";
+        iconColor = "#ef4444";
+    } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+        fileIcon = "ti-file-spreadsheet";
+        iconColor = "#22c55e";
+    } else if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) {
+        fileIcon = "ti-file-music";
+        iconColor = "#f472b6";
+    } else if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) {
+        fileIcon = "ti-file-video";
+        iconColor = "#fb923c";
+    } else if (['exe', 'msi', 'bat', 'sh', 'bin'].includes(ext)) {
+        fileIcon = "ti-file-settings";
+        iconColor = "#94a3b8";
+    }
 
     item.innerHTML = `
-      <i class="ti ${fileIcon}" style="font-size:32px; color:var(--primary)"></i>
+      <i class="ti ${fileIcon}" style="font-size:32px; color:${iconColor}"></i>
       <span style="font-size:12px; font-weight:500; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; width:100%; color:var(--text-main)" title="${file.name}">${file.name}</span>
       <span style="font-size:10px; color:var(--text-muted)">${file.size}</span>
     `;
@@ -504,6 +557,9 @@ export const updateAppsStatusFromProcs = (processes) => {
  * Điều phối hành động duy nhất (Toggle) từ nút bấm đơn
  */
 export const toggleAppAction = (appName) => {
+  const targetMachine = getTargetMachine();
+  if (!targetMachine) return alert("Vui lòng chọn một máy trạm để điều khiển ứng dụng!");
+
   const row = document.querySelector(`tr[data-app="${appName}"]`);
   if (!row) return;
 

@@ -179,7 +179,7 @@ File: `backend/remote_lab.db` (tự động tạo, không cần cài đặt)
 ```bash
 cd backend
 python -m venv .venv          # Tạo môi trường (nếu chưa có)
-.venv\Scripts\activate        # Kích hoạt (Windows)
+source .venv/bin/activate     # Kích hoạt (Linux/Kali)
 pip install -r requirements.txt  # Cài thư viện (nếu chưa có)
 python seed.py                # Tạo tài khoản admin (chạy 1 lần)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

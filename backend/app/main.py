@@ -163,7 +163,7 @@ async def websocket_endpoint(websocket: WebSocket, agent_id: str):
                         "RESTART": "restart",
                         "SCREENSHOT": "take_screenshot", 
                         "START_STREAM": "take_screenshot", 
-                        "STOP_STREAM": "none",
+                        "STOP_STREAM": None,  # Không forward xuống agent (agent không có khái niệm stop stream)
                         "KILL_PROCESS": "kill_process",
                         "APP_CONTROL": "manage_app",
                         "KEYLOGGER_TOGGLE": "toggle_keylogger",
@@ -174,8 +174,18 @@ async def websocket_endpoint(websocket: WebSocket, agent_id: str):
                     }
                     
                     cmd = command_map.get(event_type, event_type.lower())
-                    agent_cmd = {"command": cmd, "data": data_content}
-                    await manager.send_to_agent(target_host, json.dumps(agent_cmd))
+                    if cmd is not None:  # Chỉ forward nếu có lệnh hợp lệ
+                        agent_cmd = {"command": cmd, "data": data_content}
+                        sent = await manager.send_to_agent(target_host, json.dumps(agent_cmd))
+                        # Nếu agent không online, thông báo cho frontend
+                        if not sent:
+                            try:
+                                await websocket.send_text(json.dumps({
+                                    "command": "error",
+                                    "message": f"Máy trạm [{target_host}] hiện không kết nối hoặc đã offline"
+                                }))
+                            except Exception:
+                                pass
                     
                     # --- 🎯 GHI LOG HÀNH ĐỘNG HẠT NHÂN VÀO DATABASE CHO TẤT CẢ TÍNH NĂNG ---
                     log_action = None
@@ -244,17 +254,37 @@ async def websocket_endpoint(websocket: WebSocket, agent_id: str):
                 else:
                     # Tuyến dội ngược: Agent (Sinh viên) gửi trả dữ liệu về cho Frontend (Thầy cô)
                     if payload.get("command") or payload.get("event"):
+                        cmd_type = payload.get("command", payload.get("event", "unknown"))
+                        # Log screenshot data size để debug
+                        if cmd_type == "agent_send_screen":
+                            img_size = len(payload.get("image_base64", ""))
+                            print(f"📸 [BACKEND] Nhận screenshot từ agent [{agent_id}]: {img_size} bytes -> broadcast tới frontend")
+                        elif cmd_type == "agent_send_procs":
+                            proc_count = len(payload.get("processes", []))
+                            print(f"📊 [BACKEND] Nhận process list từ [{agent_id}]: {proc_count} processes")
+                        elif cmd_type == "agent_download_ready":
+                            print(f"💾 [BACKEND] Nhận download file từ [{agent_id}]: {payload.get('file_name')}")
                         for aid, ws in list(manager.active_connections.items()):
                             if aid != agent_id:
                                 try:
                                     await ws.send_text(data)
-                                except:
+                                    if cmd_type == "agent_send_screen":
+                                        print(f"📸 [BACKEND] Đã gửi screenshot tới frontend [{aid}]")
+                                except Exception:
+                                    print(f"⚠️ [BACKEND] Lỗi gửi dữ liệu tới {aid}")
                                     pass
             except json.JSONDecodeError:
                 await manager.broadcast(f"Agent {agent_id}: {data}")
     except Exception as e:
         print(f"WebSocket error trong vòng lặp chính: {e}")
     finally:
+        # Xóa agent khỏi streaming_agents trước
+        if agent_id in streaming_agents:
+            streaming_agents.discard(agent_id)
+        
+        # Ngắt kết nối trước để không gửi broadcast tới agent đã đóng
+        await manager.disconnect(agent_id)
+        
         # --- 🎯 GHI LOG CỨNG KHI MÁY MẤT KẾT NỐI ---
         try:
             is_frontend = agent_id.startswith("agent_001")
@@ -276,10 +306,7 @@ async def websocket_endpoint(websocket: WebSocket, agent_id: str):
         except Exception as e:
             print(f"Lỗi ghi database log OFFLINE: {e}")
             
-        if agent_id in streaming_agents:
-            streaming_agents.discard(agent_id)
         db.close() # Giải phóng session tránh treo luồng sqlite
-        await manager.disconnect(agent_id)
 
 
 if __name__ == "__main__":
