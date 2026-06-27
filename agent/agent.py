@@ -171,17 +171,17 @@ def webcam_stream_worker(ws):
         time.sleep(0.15)
 
     if not warm_ok:
-        print("⚠️ [WEBCAM] Frame quá tối, thử convert YUYV->BGR thủ công...")
+        print("⚠️ [WEBCAM] Frame quá tối, thử hoán đổi kênh màu (BGR <-> RGB)...")
         for _ in range(5):
             ret,test_frame=cap.read()
             if not ret:
                 time.sleep(0.15)
                 continue
-            converted=cv2.cvtColor(test_frame,cv2.COLOR_YUV2BGR_YUY2)
-            print(f"📷 [WEBCAM] Converted shape: {converted.shape}, mean={converted.mean():.1f}")
-            if converted.mean()>15:
-                test_frame=converted
-                warm_ok=True
+            swapped = cv2.cvtColor(test_frame, cv2.COLOR_BGR2RGB)
+            if swapped.mean() > 15:
+                test_frame = cv2.cvtColor(swapped, cv2.COLOR_RGB2BGR)
+                print(f"📷 [WEBCAM] Swapped shape: {test_frame.shape}, mean={test_frame.mean():.1f}")
+                warm_ok = True
                 break
             time.sleep(0.15)
 
