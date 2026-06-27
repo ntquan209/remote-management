@@ -95,23 +95,17 @@ def webcam_stream_worker(ws):
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
 
-    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    cap = cv2.VideoCapture(0)  # Chỉ dùng FFMPEG backend
     if not cap.isOpened():
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
-            webcam_streaming = False
-            return
+        print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
+        webcam_streaming = False
+        return
 
-    # Ep dinh dang MJPEG de tranh select() timeout
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    # Giảm FPS và chất lượng JPEG để tránh corrupt trên VM
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 15)
-    time.sleep(0.5)
-
-    for _ in range(5):
-        cap.grab()
+    cap.set(cv2.CAP_PROP_FPS, 8)
+    time.sleep(2.0)
 
     fail_count = 0
     while webcam_streaming:
@@ -123,12 +117,15 @@ def webcam_stream_worker(ws):
                 if fail_count >= 10:
                     print("❌ [WEBCAM] Quá nhiều lần lỗi, dừng luồng")
                     break
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
 
             fail_count = 0
             frame_resized = cv2.resize(frame, (640, 480))
-            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 35])
+            if not buffer:
+                print("⚠️ [WEBCAM] JPEG encode thất bại")
+                continue
             img_base64 = base64.b64encode(buffer).decode('utf-8')
             payload = {
                 "command": "agent_send_webcam",
@@ -139,7 +136,7 @@ def webcam_stream_worker(ws):
         except Exception as e:
             print(f"❌ Lỗi truyền gói tin camera: {e}")
             time.sleep(0.5)
-        time.sleep(0.25)
+        time.sleep(0.35)
 
     cap.release()
     print("🎥 [WEBCAM] Worker đã kết thúc")
