@@ -4,6 +4,9 @@ import threading
 import base64
 import io
 import queue  # Thread-safe queue
+import subprocess
+import threading
+import time
 import websocket  # Thư viện kết nối WebSocket thuần
 
 # Thư viện phục vụ Webcam
@@ -96,45 +99,57 @@ def enqueue_send(payload_dict):
         return False
 
 
+def _set_v4l2_mjpg():
+    try:
+        result = subprocess.run(
+            ["v4l2-ctl", "-d", "/dev/video0", "-v", "width=640,height=480,pixelformat=MJPG,framerate=8/1"],
+            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
+        )
+        if result.returncode == 0:
+            print("✓ Đã đặt định dạng MJPEG qua v4l2-ctl")
+            return True
+        else:
+            print("⚠️ v4l2-ctl thất bại, camera có thể không hỗ trợ MJPEG")
+    except FileNotFoundError:
+        print("⚠️ v4l2-ctl không có sẵn (cài apt install v4l-utils)")
+    except Exception as e:
+        print(f"⚠️ Lỗi v4l2-ctl: {e}")
+    return False
+
+def _detect_and_fix_color(frame):
+    mean_val = frame.mean()
+    std_val = frame.std()
+    if mean_val < 20:
+        return frame, False
+    b, g, r = cv2.split(frame)
+    if g.mean() > r.mean() * 1.5 and g.mean() > b.mean() * 1.5:
+        return cv2.merge((r, b, g)), True
+    if r.mean() > g.mean() * 1.5 and b.mean() > g.mean() * 1.5:
+        return cv2.merge((g, r, b)), True
+    return frame, False
+
 def webcam_stream_worker(ws):
     """Luồng phụ chạy độc lập chịu trách nhiệm đọc camera bằng OpenCV và nén ảnh gửi về"""
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
     print(f"📷 [WEBCAM] Đang mở camera index 0...")
-    # Thử mở camera với nhiều backend khác nhau
+    
+    _set_v4l2_mjpg()
+    time.sleep(0.5)
+    
     cap = None
+    color_swapped = False
     
-    # Cách 1: Thử V4L2 với định dạng MJPEG để đảm bảo màu sắc chính xác
-    print("📷 [WEBCAM] Thử V4L2...")
-    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
-    if cap.isOpened():
-        print(f"  ✓ V4L2 đã mở")
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        print(f"  ✓ Đã ép định dạng MJPEG")
-
-    # Cách 2: Thử V4L2 mặc định nếu cách 1 thất bại
-    if not cap or not cap.isOpened():
-        print("📷 [WEBCAM] Thử V4L2 mặc định...")
+    for backend_name, backend in [("V4L2", cv2.CAP_V4L2), ("FFMPEG", cv2.CAP_FFMPEG), ("default", 0)]:
+        print(f"📷 [WEBCAM] Thử {backend_name}...")
         if cap:
             cap.release()
-        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        cap = cv2.VideoCapture(0, backend)
         if cap.isOpened():
-            print(f"  ✓ V4L2 mặc định đã mở")
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            print(f"  ✓ Đã ép định dạng MJPEG")
+            print(f"  ✓ {backend_name} đã mở")
+            break
+        cap = None
     
-    # Cách 3: Thử backend mặc định (không chỉ định backend)
-    if not cap or not cap.isOpened():
-        print("📷 [WEBCAM] Thử backend mặc định...")
-        if cap:
-            cap.release()
-        cap = cv2.VideoCapture(0)
-        if cap.isOpened():
-            print(f"  ✓ Backend mặc định đã mở")
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            print(f"  ✓ Đã ép định dạng MJPEG")
-    
-    # Kiểm tra cuối cùng
     if not cap or not cap.isOpened():
         print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
         print("💡 Hãy kiểm tra:")
@@ -144,58 +159,32 @@ def webcam_stream_worker(ws):
         webcam_streaming = False
         return
     
-    # Đọc frame thử để xác nhận camera hoạt động thực sự
-    print("📷 [WEBCAM] Đang kiểm tra camera (đọc thử frame)...")
-    time.sleep(1.0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FPS, 8)
+    time.sleep(0.5)
+    
+    for _ in range(3):
+        cap.read()
+    
     ret, test_frame = cap.read()
     if not ret or test_frame is None:
         print("❌ [WEBCAM] Camera mở được nhưng không đọc được frame")
-        print("   Camera có thể bị chiếm bởi process khác hoặc không hoạt động")
         cap.release()
         webcam_streaming = False
         return
     
     print(f"📷 [WEBCAM] Camera hoạt động! Frame shape: {test_frame.shape}")
-    print(f"📷 [WEBCAM] Width={cap.get(cv2.CAP_PROP_FRAME_WIDTH)}, Height={cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}, FPS={cap.get(cv2.CAP_PROP_FPS)}")
     fourcc = cap.get(cv2.CAP_PROP_FOURCC)
     print(f"📷 [WEBCAM] FOURCC={fourcc:.0f}")
+    print(f"📷 [WEBCAM] Mean={test_frame.mean():.1f}, Std={test_frame.std():.1f}")
     
-
-    # Warm-up va fallback convert neu frame qua toi (gan den)
-    warm_ok=False
-    for _ in range(5):
-        ret,test_frame=cap.read()
-        if ret and test_frame is not None and test_frame.mean()>15:
-            warm_ok=True
-            break
-        time.sleep(0.15)
-
-    if not warm_ok:
-        print("⚠️ [WEBCAM] Frame quá tối, thử hoán đổi kênh màu (BGR <-> RGB)...")
-        for _ in range(5):
-            ret,test_frame=cap.read()
-            if not ret:
-                time.sleep(0.15)
-                continue
-            swapped = cv2.cvtColor(test_frame, cv2.COLOR_BGR2RGB)
-            if swapped.mean() > 15:
-                test_frame = cv2.cvtColor(swapped, cv2.COLOR_RGB2BGR)
-                print(f"📷 [WEBCAM] Swapped shape: {test_frame.shape}, mean={test_frame.mean():.1f}")
-                warm_ok = True
-                break
-            time.sleep(0.15)
-
-    if not warm_ok:
-        print("❌ [WEBCAM] Không thể lấy frame hợp lệ sau nhiều lần thử")
-        cap.release()
-        webcam_streaming=False
-        return
-
-    # Giảm FPS và chất lượng JPEG để tránh corrupt trên VM
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 8)
-    time.sleep(0.3)
+    frame_mean = test_frame.mean()
+    if frame_mean < 25:
+        fixed, did_swap = _detect_and_fix_color(test_frame)
+        if did_swap:
+            print(f"📷 [WEBCAM] Đã hoán đổi kênh màu! Mean sau: {fixed.mean():.1f}")
+            color_swapped = True
 
     fail_count = 0
     while webcam_streaming:
@@ -210,8 +199,14 @@ def webcam_stream_worker(ws):
                 time.sleep(0.2)
                 continue
 
-            print(f"📷 [WEBCAM] Đọc frame {fail_count} lần, kích thước: {frame.shape}")
             fail_count = 0
+            
+            if not color_swapped:
+                frame, did_swap = _detect_and_fix_color(frame)
+                if did_swap:
+                    color_swapped = True
+                    print("✓ [WEBCAM] Đã kích hoạt sửa màu tự động")
+            
             frame_resized = cv2.resize(frame, (640, 480))
             _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
             if buffer is None or len(buffer) == 0:
