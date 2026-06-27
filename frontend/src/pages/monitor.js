@@ -294,20 +294,28 @@ export const triggerWebcam = (status) => {
   if (!displayBox) return;
 
   if (status) {
+    console.log(`🔘 [WEBCAM BUTTON] Bật webcam cho: ${targetMachine}`);
     displayBox.innerHTML = `
       <div id="webcam-placeholder-area" style="text-align:center;color:var(--warning)">
         <i class="ti ti-loader animate-spin" style="font-size:40px;margin-bottom:8px"></i>
         <div>Đang gửi yêu cầu và đợi sinh viên xác nhận quyền Webcam...</div>
       </div>`;
     sessionStorage.setItem(`webcam_active_${targetMachine}`, 'TRUE');
+    const checkValue = sessionStorage.getItem(`webcam_active_${targetMachine}`);
+    console.log(`  ✓ Đã set sessionStorage[webcam_active_${targetMachine}] = ${checkValue}`);
     emitCommand('WEBCAM_START', targetMachine, { status: true });
   } else {
+    console.log(`🔘 [WEBCAM BUTTON] Tắt webcam cho: ${targetMachine}`);
+    const oldValue = sessionStorage.getItem(`webcam_active_${targetMachine}`);
+    console.log(`  SessionStorage cũ: ${oldValue}`);
     displayBox.innerHTML = `
       <div id="webcam-placeholder-area" style="text-align:center;color:var(--text-muted)">
         <i class="ti ti-camera-off" style="font-size:40px;margin-bottom:8px"></i>
         <div>Webcam đang đóng</div>
       </div>`;
     sessionStorage.removeItem(`webcam_active_${targetMachine}`);
+    const newValue = sessionStorage.getItem(`webcam_active_${targetMachine}`);
+    console.log(`  ✓ Đã xóa sessionStorage, giá trị mới: ${newValue}`);
     emitCommand('WEBCAM_STOP', targetMachine, { status: false });
   }
 };
@@ -319,8 +327,21 @@ export const handleIncomingWebcam = (data) => {
   const incomingMachine = data.machine_name;
   const activeSelection = getTargetMachine();
 
-  if (incomingMachine !== activeSelection) return;
-  if (!sessionStorage.getItem(`webcam_active_${incomingMachine}`)) return;
+  console.log(`📹 [WEBCAM FRONTEND] Nhận frame từ: ${incomingMachine}, đang chọn: ${activeSelection}`);
+  
+  if (incomingMachine !== activeSelection) {
+    console.log(`  ✗ Bỏ qua - máy không khớp`);
+    return;
+  }
+  
+  const sessionKey = `webcam_active_${incomingMachine}`;
+  const sessionValue = sessionStorage.getItem(sessionKey);
+  console.log(`  SessionStorage[${sessionKey}] = ${sessionValue}`);
+  
+  if (!sessionValue) {
+    console.log(`  ✗ Bỏ qua - sessionStorage không có key webcam_active`);
+    return;
+  }
 
   const displayBox = getElementById('webcam-display-box');
   if (!displayBox) return;

@@ -48,9 +48,13 @@ export const handleWebcamTrigger = (isOn) => {
   
   if (isOn) {
     box.innerHTML = `<div style="color:var(--success);font-weight:600;text-align:center;"><i class="ti ti-camera" style="font-size:40px;margin-bottom:8px;color:var(--primary)"></i><div>Đang gửi yêu cầu Consent xuống máy trạm...</div></div>`;
+    sessionStorage.setItem(`webcam_active_${targetMachine}`, 'TRUE');
+    console.log(`[WEBCAM CONTROL] Enable webcam for ${targetMachine}`);
     emitCommand('WEBCAM_START', targetMachine);
   } else {
     box.innerHTML = `<div style="text-align:center;color:var(--text-muted)"><i class="ti ti-camera-off" style="font-size:40px;margin-bottom:8px"></i><div>Webcam đã tắt thành công</div></div>`;
+    sessionStorage.removeItem(`webcam_active_${targetMachine}`);
+    console.log(`[WEBCAM CONTROL] Disable webcam for ${targetMachine}`);
     emitCommand('WEBCAM_STOP', targetMachine);
   }
 };
