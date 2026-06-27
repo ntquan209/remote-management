@@ -94,6 +94,11 @@ def webcam_stream_worker(ws):
     """Luồng phụ chạy độc lập chịu trách nhiệm đọc camera bằng OpenCV và nén ảnh gửi về"""
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
+    print(f"📷 [WEBCAM] Đang mở camera index 0...")
+    cap = cv2.VideoCapture(0)
+    print(f"📷 [WEBCAM] isOpened={cap.isOpened()}")
+    if cap.isOpened():
+        print(f"📷 [WEBCAM] Width={cap.get(cv2.CAP_PROP_FRAME_WIDTH)}, Height={cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}, FPS={cap.get(cv2.CAP_PROP_FPS)}")
 
     cap = cv2.VideoCapture(0)  # Chỉ dùng FFMPEG backend
     if not cap.isOpened():
