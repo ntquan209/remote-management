@@ -94,17 +94,39 @@ def webcam_stream_worker(ws):
     """Luồng phụ chạy độc lập chịu trách nhiệm đọc camera bằng OpenCV và nén ảnh gửi về"""
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
-        webcam_streaming = False
-        return
 
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
+            webcam_streaming = False
+            return
+
+    # Ep dinh dang MJPEG de tranh select() timeout
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FPS, 15)
+    time.sleep(0.5)
+
+    for _ in range(5):
+        cap.grab()
+
+    fail_count = 0
     while webcam_streaming:
-        ret, frame = cap.read()
-        if not ret:
-            break
         try:
+            ret, frame = cap.read()
+            if not ret:
+                fail_count += 1
+                print(f"⚠️ [WEBCAM] Không đọc được frame (lần {fail_count})")
+                if fail_count >= 10:
+                    print("❌ [WEBCAM] Quá nhiều lần lỗi, dừng luồng")
+                    break
+                time.sleep(0.1)
+                continue
+
+            fail_count = 0
             frame_resized = cv2.resize(frame, (640, 480))
             _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             img_base64 = base64.b64encode(buffer).decode('utf-8')
@@ -116,8 +138,11 @@ def webcam_stream_worker(ws):
             enqueue_send(payload)
         except Exception as e:
             print(f"❌ Lỗi truyền gói tin camera: {e}")
+            time.sleep(0.5)
         time.sleep(0.25)
+
     cap.release()
+    print("🎥 [WEBCAM] Worker đã kết thúc")
 
 
 def on_message(ws, message):
