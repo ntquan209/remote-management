@@ -116,75 +116,84 @@ def _set_v4l2_mjpg():
         print(f"⚠️ Lỗi v4l2-ctl: {e}")
     return False
 
-def _detect_and_fix_color(frame):
-    mean_val = frame.mean()
-    std_val = frame.std()
-    if mean_val < 20:
-        return frame, False
+def _pick_bgr_permutation(frame):
     b, g, r = cv2.split(frame)
-    if g.mean() > r.mean() * 1.5 and g.mean() > b.mean() * 1.5:
-        return cv2.merge((r, b, g)), True
-    if r.mean() > g.mean() * 1.5 and b.mean() > g.mean() * 1.5:
-        return cv2.merge((g, r, b)), True
-    return frame, False
+    means = [b.mean(), g.mean(), r.mean()]
+    max_m, min_m = max(means), min(means)
+    if min_m > 0 and max_m / min_m < 1.8:
+        return frame, False
+    perms = {
+        'as_is': cv2.merge((b, g, r)),
+        'swap_rb': cv2.merge((r, g, b)),
+        'swap_gb': cv2.merge((g, b, r)),
+        'swap_rg': cv2.merge((b, r, g)),
+    }
+    best = frame
+    best_score = float('inf')
+    chosen = False
+    for name, candidate in perms.items():
+        cb, cg, cr = cv2.split(candidate)
+        vals = [cb.mean(), cg.mean(), cr.mean()]
+        mx, mn = max(vals), min(vals)
+        score = mx / mn if mn > 0 else float('inf')
+        if score < best_score:
+            best_score = score
+            best = candidate
+            chosen = True
+    if chosen:
+        print(f"📷 [WEBCAM] Chọn hoán đổi kênh (balance={best_score:.2f})")
+    return best, chosen
+
 
 def webcam_stream_worker(ws):
     """Luồng phụ chạy độc lập chịu trách nhiệm đọc camera bằng OpenCV và nén ảnh gửi về"""
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
-    print(f"📷 [WEBCAM] Đang mở camera index 0...")
-    
+
     _set_v4l2_mjpg()
     time.sleep(0.5)
-    
+
     cap = None
-    color_swapped = False
-    
+    color_fixed = False
+
     for backend_name, backend in [("V4L2", cv2.CAP_V4L2), ("FFMPEG", cv2.CAP_FFMPEG), ("default", 0)]:
-        print(f"📷 [WEBCAM] Thử {backend_name}...")
         if cap:
             cap.release()
+        print(f"📷 [WEBCAM] Thử {backend_name}...")
         cap = cv2.VideoCapture(0, backend)
         if cap.isOpened():
             print(f"  ✓ {backend_name} đã mở")
             break
         cap = None
-    
+
     if not cap or not cap.isOpened():
         print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
-        print("💡 Hãy kiểm tra:")
-        print("   - Camera có được kết nối không?")
-        print("   - Thiết bị /dev/video0 có tồn tại không?")
-        print("   - Quyền truy cập camera (sudo usermod -aG video $USER)")
         webcam_streaming = False
         return
-    
+
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 8)
     time.sleep(0.5)
-    
-    for _ in range(3):
+
+    for _ in range(5):
         cap.read()
-    
+    time.sleep(0.2)
+
     ret, test_frame = cap.read()
     if not ret or test_frame is None:
         print("❌ [WEBCAM] Camera mở được nhưng không đọc được frame")
         cap.release()
         webcam_streaming = False
         return
-    
-    print(f"📷 [WEBCAM] Camera hoạt động! Frame shape: {test_frame.shape}")
+
     fourcc = cap.get(cv2.CAP_PROP_FOURCC)
-    print(f"📷 [WEBCAM] FOURCC={fourcc:.0f}")
-    print(f"📷 [WEBCAM] Mean={test_frame.mean():.1f}, Std={test_frame.std():.1f}")
-    
-    frame_mean = test_frame.mean()
-    if frame_mean < 25:
-        fixed, did_swap = _detect_and_fix_color(test_frame)
-        if did_swap:
-            print(f"📷 [WEBCAM] Đã hoán đổi kênh màu! Mean sau: {fixed.mean():.1f}")
-            color_swapped = True
+    print(f"📷 [WEBCAM] Frame: {test_frame.shape}, FOURCC={fourcc:.0f}")
+    print(f"📷 [WEBCAM] B={test_frame[:,:,0].mean():.1f} G={test_frame[:,:,1].mean():.1f} R={test_frame[:,:,2].mean():.1f}")
+
+    _, did_fix = _pick_bgr_permutation(test_frame)
+    if did_fix:
+        color_fixed = True
 
     fail_count = 0
     while webcam_streaming:
@@ -200,15 +209,16 @@ def webcam_stream_worker(ws):
                 continue
 
             fail_count = 0
-            
-            if not color_swapped:
-                frame, did_swap = _detect_and_fix_color(frame)
-                if did_swap:
-                    color_swapped = True
-                    print("✓ [WEBCAM] Đã kích hoạt sửa màu tự động")
-            
             frame_resized = cv2.resize(frame, (640, 480))
-            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+
+            if not color_fixed:
+                fixed_bgr, did_fix = _pick_bgr_permutation(frame_resized)
+                if did_fix:
+                    color_fixed = True
+                    frame_resized = fixed_bgr
+
+            rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+            _, buffer = cv2.imencode('.jpg', rgb, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
             if buffer is None or len(buffer) == 0:
                 print("⚠️ [WEBCAM] JPEG encode thất bại")
                 continue
