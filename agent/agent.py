@@ -174,7 +174,7 @@ def webcam_stream_worker(ws):
             print(f"📷 [WEBCAM] Đọc frame {fail_count} lần, kích thước: {frame.shape}")
             fail_count = 0
             frame_resized = cv2.resize(frame, (640, 480))
-            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 35])
+            _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
             if buffer is None or len(buffer) == 0:
                 print("⚠️ [WEBCAM] JPEG encode thất bại")
                 continue

@@ -201,7 +201,8 @@ export const handleIncomingScreen = (data) => {
       base64Str = base64Str.substring(2, base64Str.length - 1);
     }
     const cleanBase64 = base64Str.replace(/(\r\n|\n|\r)/gm, "").trim();
-    const mimeType = cleanBase64.charAt(0) === '/' ? 'jpeg' : 'png';
+    // Backend luon encode JPEG, khong can detect MIME
+    const mimeType = 'jpeg';
     
     // 🎯 ĐƠN GIẢN HÓA HOÀN TOÀN: chỉ set innerHTML với img trực tiếp
     // Không dùng container có nền đen, không dùng querySelector
@@ -358,7 +359,8 @@ export const handleIncomingWebcam = (data) => {
       base64Str = base64Str.substring(2, base64Str.length - 1);
     }
     const cleanBase64 = base64Str.replace(/(\r\n|\n|\r)/gm, "").trim();
-    const mimeType = cleanBase64.charAt(0) === '/' ? 'jpeg' : 'png';
+    // Backend luon encode JPEG, khong can detect MIME
+    const mimeType = 'jpeg';
     imgElement.src = `data:image/${mimeType};base64,${cleanBase64}`;
   }
 };
