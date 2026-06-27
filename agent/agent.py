@@ -98,13 +98,11 @@ def webcam_stream_worker(ws):
     # Thử mở camera với nhiều backend khác nhau
     cap = None
     
-    # Cách 1: Thử V4L2 với định dạng MJPEG (ổn định nhất)
-    print("📷 [WEBCAM] Thử V4L2 + MJPEG...")
+    # Cách 1: Thử V4L2 với định dạng YUYV (raw) - OpenCV sẽ tự encode JPEG
+    print("📷 [WEBCAM] Thử V4L2 + YUYV...")
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
     if cap.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        cap.set(cv2.CAP_PROP_FOURCC, fourcc)
-        print(f"  ✓ V4L2 + MJPEG đã mở")
+        print(f"  ✓ V4L2 đã mở")
     
     # Cách 2: Thử V4L2 mặc định nếu cách 1 thất bại
     if not cap or not cap.isOpened():
