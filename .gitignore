@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+backend/.venv/
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Database
+*.db
+*.sqlite
+backend/remote_lab.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / debug files
+agent/test_*
+agent/*.png
+agent/check_*.py
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# Project specific
+plan.md
