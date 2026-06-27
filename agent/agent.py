@@ -105,13 +105,11 @@ def webcam_stream_worker(ws):
     cap = None
     
     # Cách 1: Thử V4L2 với định dạng MJPEG để đảm bảo màu sắc chính xác
-    print("📷 [WEBCAM] Thử V4L2 + MJPEG...")
+    print("📷 [WEBCAM] Thử V4L2...")
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
     if cap.isOpened():
         print(f"  ✓ V4L2 đã mở")
         # Ép định dạng MJPEG để tránh lỗi màu xanh do YUYV raw
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        print(f"  ✓ Đã set FOURCC=MJPG")
     
     # Cách 2: Thử V4L2 mặc định nếu cách 1 thất bại
     if not cap or not cap.isOpened():
@@ -121,8 +119,6 @@ def webcam_stream_worker(ws):
         cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
         if cap.isOpened():
             print(f"  ✓ V4L2 mặc định đã mở")
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            print(f"  ✓ Đã set FOURCC=MJPG")
     
     # Cách 3: Thử backend mặc định (không chỉ định backend)
     if not cap or not cap.isOpened():
@@ -132,8 +128,6 @@ def webcam_stream_worker(ws):
         cap = cv2.VideoCapture(0)
         if cap.isOpened():
             print(f"  ✓ Backend mặc định đã mở")
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            print(f"  ✓ Đã set FOURCC=MJPG")
     
     # Kiểm tra cuối cùng
     if not cap or not cap.isOpened():
@@ -158,12 +152,45 @@ def webcam_stream_worker(ws):
     
     print(f"📷 [WEBCAM] Camera hoạt động! Frame shape: {test_frame.shape}")
     print(f"📷 [WEBCAM] Width={cap.get(cv2.CAP_PROP_FRAME_WIDTH)}, Height={cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}, FPS={cap.get(cv2.CAP_PROP_FPS)}")
+    fourcc = cap.get(cv2.CAP_PROP_FOURCC)
+    print(f"📷 [WEBCAM] FOURCC={fourcc:.0f}")
     
+
+    # Warm-up va fallback convert neu frame qua toi (gan den)
+    warm_ok=False
+    for _ in range(5):
+        ret,test_frame=cap.read()
+        if ret and test_frame is not None and test_frame.mean()>15:
+            warm_ok=True
+            break
+        time.sleep(0.15)
+
+    if not warm_ok:
+        print("⚠️ [WEBCAM] Frame quá tối, thử convert YUYV->BGR thủ công...")
+        for _ in range(5):
+            ret,test_frame=cap.read()
+            if not ret:
+                time.sleep(0.15)
+                continue
+            converted=cv2.cvtColor(test_frame,cv2.COLOR_YUV2BGR_YUY2)
+            print(f"📷 [WEBCAM] Converted shape: {converted.shape}, mean={converted.mean():.1f}")
+            if converted.mean()>15:
+                test_frame=converted
+                warm_ok=True
+                break
+            time.sleep(0.15)
+
+    if not warm_ok:
+        print("❌ [WEBCAM] Không thể lấy frame hợp lệ sau nhiều lần thử")
+        cap.release()
+        webcam_streaming=False
+        return
+
     # Giảm FPS và chất lượng JPEG để tránh corrupt trên VM
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 8)
-    time.sleep(0.5)
+    time.sleep(0.3)
 
     fail_count = 0
     while webcam_streaming:
