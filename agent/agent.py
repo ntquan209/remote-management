@@ -123,7 +123,7 @@ def webcam_stream_worker(ws):
             fail_count = 0
             frame_resized = cv2.resize(frame, (640, 480))
             _, buffer = cv2.imencode('.jpg', frame_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 35])
-            if not buffer:
+            if buffer is None or len(buffer) == 0:
                 print("⚠️ [WEBCAM] JPEG encode thất bại")
                 continue
             img_base64 = base64.b64encode(buffer).decode('utf-8')
