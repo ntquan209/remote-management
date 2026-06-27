@@ -109,8 +109,9 @@ def webcam_stream_worker(ws):
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
     if cap.isOpened():
         print(f"  ✓ V4L2 đã mở")
-        # Ép định dạng MJPEG để tránh lỗi màu xanh do YUYV raw
-    
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        print(f"  ✓ Đã ép định dạng MJPEG")
+
     # Cách 2: Thử V4L2 mặc định nếu cách 1 thất bại
     if not cap or not cap.isOpened():
         print("📷 [WEBCAM] Thử V4L2 mặc định...")
@@ -119,6 +120,8 @@ def webcam_stream_worker(ws):
         cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
         if cap.isOpened():
             print(f"  ✓ V4L2 mặc định đã mở")
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            print(f"  ✓ Đã ép định dạng MJPEG")
     
     # Cách 3: Thử backend mặc định (không chỉ định backend)
     if not cap or not cap.isOpened():
@@ -128,6 +131,8 @@ def webcam_stream_worker(ws):
         cap = cv2.VideoCapture(0)
         if cap.isOpened():
             print(f"  ✓ Backend mặc định đã mở")
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            print(f"  ✓ Đã ép định dạng MJPEG")
     
     # Kiểm tra cuối cùng
     if not cap or not cap.isOpened():
