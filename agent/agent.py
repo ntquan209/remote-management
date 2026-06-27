@@ -11,6 +11,7 @@ import websocket  # Thư viện kết nối WebSocket thuần
 
 # Thư viện phục vụ Webcam
 import cv2
+import numpy as np
 
 # Import các hàm chức năng từ thư mục con modules/
 from modules.system import get_process_list, kill_process_by_pid, execute_power_cmd
@@ -116,6 +117,37 @@ def _set_v4l2_mjpg():
         print(f"⚠️ Lỗi v4l2-ctl: {e}")
     return False
 
+
+def _try_gstreamer_capture():
+    try:
+        pipeline = (
+            "v4l2src device=/dev/video0 ! "
+            "video/x-raw,format=YUY2,width=640,height=480,framerate=8/1 ! "
+            "videoconvert ! video/x-raw,format=BGR ! "
+            "appsink drop=true max-buffers=1"
+        )
+        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print("  ✓ GStreamer YUY2→BGR pipeline")
+            return cap
+    except Exception as e:
+        print(f"⚠️ GStreamer YUY2 lỗi: {e}")
+    try:
+        pipeline = (
+            "v4l2src device=/dev/video0 ! "
+            "image/jpeg,width=640,height=480,framerate=8/1 ! "
+            "jpegdec ! videoconvert ! video/x-raw,format=BGR ! "
+            "appsink drop=true max-buffers=1"
+        )
+        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print("  ✓ GStreamer MJPEG pipeline")
+            return cap
+    except Exception as e:
+        print(f"⚠️ GStreamer MJPEG lỗi: {e}")
+    return None
+
+
 def _pick_bgr_permutation(frame):
     b, g, r = cv2.split(frame)
     means = [b.mean(), g.mean(), r.mean()]
@@ -145,8 +177,28 @@ def _pick_bgr_permutation(frame):
     return best, chosen
 
 
+def _try_yuyv_from_3ch(frame):
+    b, g, r = cv2.split(frame)
+    if g.mean() > 20 and (b.mean() < 12 or r.mean() < 12):
+        h, w = frame.shape[:2]
+        try:
+            for offset in range(3):
+                raw = frame.tobytes()[offset:offset + h * w * 2]
+                if len(raw) < h * w * 2:
+                    continue
+                arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 2)
+                converted = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUY2)
+                cb, cg, cr = cv2.split(converted)
+                if cg.mean() > 15 and cb.mean() > 10 and cr.mean() > 10:
+                    print(f"✓ [WEBCAM] Tái tạo YUYV từ offset={offset}")
+                    return converted
+        except Exception:
+            pass
+    return None
+
+
 def webcam_stream_worker(ws):
-    """Luồng phụ chạy độc lập chịu trách nhiệm đọc camera và nén ảnh gửi về"""
+    """Luồng phụ chạy độc lập chịu trách nhiệm đọc camera bằng OpenCV và nén ảnh gửi về"""
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
 
@@ -154,47 +206,32 @@ def webcam_stream_worker(ws):
     time.sleep(0.5)
 
     cap = None
-    use_raw_yuyv = False
 
-    for backend_name, backend in [("V4L2", cv2.CAP_V4L2), ("FFMPEG", cv2.CAP_FFMPEG), ("default", 0)]:
-        if cap:
-            cap.release()
-        print(f"📷 [WEBCAM] Thử {backend_name}...")
-        cap = cv2.VideoCapture(0, backend)
-        if cap.isOpened():
-            print(f"  ✓ {backend_name} đã mở")
-            break
-        cap = None
+    cap = _try_gstreamer_capture()
+    if cap is None:
+        for backend_name, backend in [("V4L2", cv2.CAP_V4L2), ("FFMPEG", cv2.CAP_FFMPEG), ("default", 0)]:
+            if cap:
+                cap.release()
+            print(f"📷 [WEBCAM] Thử {backend_name}...")
+            cap = cv2.VideoCapture(0, backend)
+            if cap.isOpened():
+                print(f"  ✓ {backend_name} đã mở")
+                break
+            cap = None
 
     if not cap or not cap.isOpened():
-        print("❌ [WEBCAM] Không thể mở thiết bị ghi hình")
+        print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
+        print("💡 Hãy kiểm tra:")
+        print("   - Camera có được kết nối không?")
+        print("   - Thiết bị /dev/video0 có tồn tại không?")
+        print("   - Quyền truy cập camera (sudo usermod -aG video $USER)")
         webcam_streaming = False
         return
-
-    try:
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, 0.0)
-        ret, raw = cap.read()
-        if ret and raw is not None:
-            if len(raw.shape) == 3 and raw.shape[2] == 2:
-                use_raw_yuyv = True
-                print(f"  ✓ Raw YUYV 2-kênh: {raw.shape}")
-            elif len(raw.shape) == 2 and raw.shape[1] == 1280:
-                use_raw_yuyv = True
-                print(f"  ✓ Raw YUYV 2D: {raw.shape}")
-            else:
-                print(f"  ⚠️ Raw shape={raw.shape}, dùng auto-convert")
-                cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
-        else:
-            print("  ⚠️ Không đọc raw frame, dùng auto-convert")
-            cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
-    except Exception as e:
-        print(f"  ⚠️ CONVERT_RGB lỗi: {e}, dùng auto-convert")
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 8)
-    time.sleep(0.3)
+    time.sleep(0.5)
 
     for _ in range(5):
         cap.read()
@@ -202,27 +239,23 @@ def webcam_stream_worker(ws):
 
     ret, test_frame = cap.read()
     if not ret or test_frame is None:
-        print("❌ [WEBCAM] Không đọc được frame")
+        print("❌ [WEBCAM] Camera mở được nhưng không đọc được frame")
         cap.release()
         webcam_streaming = False
         return
 
     fourcc = cap.get(cv2.CAP_PROP_FOURCC)
-    print(f"📷 [WEBCAM] Frame shape={test_frame.shape}, FOURCC={fourcc:.0f}")
+    print(f"📷 [WEBCAM] Camera hoạt động! Frame shape: {test_frame.shape}, FOURCC={fourcc:.0f}")
 
-    if use_raw_yuyv:
-        if len(test_frame.shape) == 2:
-            h, w = test_frame.shape
-            test_frame = test_frame.reshape(h, w // 2, 2)
-        converted = cv2.cvtColor(test_frame, cv2.COLOR_YUV2BGR_YUY2)
-        b, g, r = cv2.split(converted)
-        print(f"📷 [WEBCAM] Sau convert: B={b.mean():.1f} G={g.mean():.1f} R={r.mean():.1f}")
-    else:
+    if len(test_frame.shape) == 3 and test_frame.shape[2] == 3:
         b, g, r = cv2.split(test_frame)
         print(f"📷 [WEBCAM] B={b.mean():.1f} G={g.mean():.1f} R={r.mean():.1f}")
-        _, did_fix = _pick_bgr_permutation(test_frame)
-        if did_fix:
-            test_frame = _
+        best, _ = _pick_bgr_permutation(test_frame)
+        test_frame = best
+
+    yuyv_test = _try_yuyv_from_3ch(test_frame)
+    if yuyv_test is not None:
+        test_frame = yuyv_test
 
     fail_count = 0
     while webcam_streaming:
@@ -232,31 +265,29 @@ def webcam_stream_worker(ws):
                 fail_count += 1
                 print(f"⚠️ [WEBCAM] Không đọc được frame (lần {fail_count})")
                 if fail_count >= 10:
-                    print("❌ [WEBCAM] Quá nhiều lỗi")
+                    print("❌ [WEBCAM] Quá nhiều lần lỗi, dừng luồng")
                     break
                 time.sleep(0.2)
                 continue
 
             fail_count = 0
-
-            if use_raw_yuyv:
-                if len(frame.shape) == 2:
-                    h, w = frame.shape
-                    frame = frame.reshape(h, w // 2, 2)
-                frame = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_YUY2)
-            else:
-                frame, did_fix = _pick_bgr_permutation(frame)
-                if did_fix:
-                    print("✓ [WEBCAM] Đã sửa màu tự động")
-
             frame_resized = cv2.resize(frame, (640, 480))
-            rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+            fixed = _try_yuyv_from_3ch(frame_resized)
+            if fixed is not None:
+                rgb = cv2.cvtColor(fixed, cv2.COLOR_BGR2RGB)
+            else:
+                best, _ = _pick_bgr_permutation(frame_resized)
+                rgb = cv2.cvtColor(best, cv2.COLOR_BGR2RGB)
             _, buffer = cv2.imencode('.jpg', rgb, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
             if buffer is None or len(buffer) == 0:
                 print("⚠️ [WEBCAM] JPEG encode thất bại")
                 continue
             img_base64 = base64.b64encode(buffer).decode('utf-8')
-            payload = {"command": "agent_send_webcam", "machine_name": MACHINE_NAME, "image_base64": img_base64}
+            payload = {
+                "command": "agent_send_webcam",
+                "machine_name": MACHINE_NAME,
+                "image_base64": img_base64
+            }
             result = enqueue_send(payload)
             if result:
                 print(f"📤 [WEBCAM] Đã gửi frame ({len(img_base64)} chars base64)")
