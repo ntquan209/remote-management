@@ -95,19 +95,64 @@ def webcam_stream_worker(ws):
     global webcam_streaming
     print("🎥 [WEBCAM] Khởi chạy Worker ghi hình...")
     print(f"📷 [WEBCAM] Đang mở camera index 0...")
-    cap = cv2.VideoCapture(0, cv2.CAP_FFMPEG)  # Explicitly use FFMPEG backend to avoid V4L2 issues
-    print(f"📷 [WEBCAM] isOpened={cap.isOpened()}")
-    if not cap.isOpened():
+    # Thử mở camera với nhiều backend khác nhau
+    cap = None
+    
+    # Cách 1: Thử V4L2 với định dạng MJPEG (ổn định nhất)
+    print("📷 [WEBCAM] Thử V4L2 + MJPEG...")
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    if cap.isOpened():
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+        print(f"  ✓ V4L2 + MJPEG đã mở")
+    
+    # Cách 2: Thử V4L2 mặc định nếu cách 1 thất bại
+    if not cap or not cap.isOpened():
+        print("📷 [WEBCAM] Thử V4L2 mặc định...")
+        if cap:
+            cap.release()
+        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        if cap.isOpened():
+            print(f"  ✓ V4L2 mặc định đã mở")
+    
+    # Cách 3: Thử backend mặc định (không chỉ định backend)
+    if not cap or not cap.isOpened():
+        print("📷 [WEBCAM] Thử backend mặc định...")
+        if cap:
+            cap.release()
+        cap = cv2.VideoCapture(0)
+        if cap.isOpened():
+            print(f"  ✓ Backend mặc định đã mở")
+    
+    # Kiểm tra cuối cùng
+    if not cap or not cap.isOpened():
         print("❌ [WEBCAM] Không thể mở thiết bị ghi hình (Webcam)")
+        print("💡 Hãy kiểm tra:")
+        print("   - Camera có được kết nối không?")
+        print("   - Thiết bị /dev/video0 có tồn tại không?")
+        print("   - Quyền truy cập camera (sudo usermod -aG video $USER)")
         webcam_streaming = False
         return
     
+    # Đọc frame thử để xác nhận camera hoạt động thực sự
+    print("📷 [WEBCAM] Đang kiểm tra camera (đọc thử frame)...")
+    time.sleep(1.0)
+    ret, test_frame = cap.read()
+    if not ret or test_frame is None:
+        print("❌ [WEBCAM] Camera mở được nhưng không đọc được frame")
+        print("   Camera có thể bị chiếm bởi process khác hoặc không hoạt động")
+        cap.release()
+        webcam_streaming = False
+        return
+    
+    print(f"📷 [WEBCAM] Camera hoạt động! Frame shape: {test_frame.shape}")
     print(f"📷 [WEBCAM] Width={cap.get(cv2.CAP_PROP_FRAME_WIDTH)}, Height={cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}, FPS={cap.get(cv2.CAP_PROP_FPS)}")
+    
     # Giảm FPS và chất lượng JPEG để tránh corrupt trên VM
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 8)
-    time.sleep(2.0)
+    time.sleep(0.5)
 
     fail_count = 0
     while webcam_streaming:
