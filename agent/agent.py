@@ -279,8 +279,12 @@ def webcam_stream_worker(ws):
     ffmpeg_proc = None
     use_ffmpeg = False
 
-    cap = _try_gstreamer_capture()
-    if cap is None:
+    ffmpeg_proc = _try_ffmpeg_pipe()
+    if ffmpeg_proc is not None:
+        use_ffmpeg = True
+    else:
+        cap = _try_gstreamer_capture()
+    if cap is None and not use_ffmpeg:
         for backend_name, backend in [("V4L2", cv2.CAP_V4L2), ("FFMPEG", cv2.CAP_FFMPEG), ("default", 0)]:
             if cap:
                 cap.release()
@@ -291,18 +295,15 @@ def webcam_stream_worker(ws):
                 break
             cap = None
 
-    if not cap or not cap.isOpened():
+    if not cap and not use_ffmpeg:
         _log_v4l2_info()
-        ffmpeg_proc = _try_ffmpeg_pipe()
-        if ffmpeg_proc is None:
-            print("❌ [WEBCAM] Không thể mở thiết bị ghi hình")
-            print("💡 Hãy kiểm tra:")
-            print("   - Camera có được kết nối không?")
-            print("   - Thiết bị /dev/video0 có tồn tại không?")
-            print("   - Quyền truy cập camera (sudo usermod -aG video $USER)")
-            webcam_streaming = False
-            return
-        use_ffmpeg = True
+        print("❌ [WEBCAM] Không thể mở thiết bị ghi hình")
+        print("💡 Hãy kiểm tra:")
+        print("   - Camera có được kết nối không?")
+        print("   - Thiết bị /dev/video0 có tồn tại không?")
+        print("   - Quyền truy cập camera (sudo usermod -aG video $USER)")
+        webcam_streaming = False
+        return
 
     if use_ffmpeg:
         frame_iter = _iter_ffmpeg_frames(ffmpeg_proc)
