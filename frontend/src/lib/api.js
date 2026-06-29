@@ -17,7 +17,6 @@
  * 5. logout() xóa token khỏi localStorage
  * 
  * 🔐 PHÂN QUYỀN:
- * - student: chỉ xem dashboard cơ bản
  * - teacher: xem và điều khiển agent
  * - admin: toàn quyền + quản lý user
  */
@@ -244,6 +243,6 @@ export async function adminToggleActive(userId) {
 export function hasRole(requiredRole) {
     const user = getUser();
     if (!user) return false;
-    const ROLES = { admin: 3, teacher: 2, student: 1 };
+    const ROLES = { admin: 2, teacher: 1 };
     return (ROLES[user.role] || 0) >= (ROLES[requiredRole] || 0);
 }

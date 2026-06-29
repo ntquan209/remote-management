@@ -8,7 +8,6 @@ def get_sandbox_files():
     try:
         if not os.path.exists(SANDBOX_DIR):
             os.makedirs(SANDBOX_DIR)
-            print(f"Da tao thu muc sandbox: {SANDBOX_DIR}")
             return file_list
         for entry in os.scandir(SANDBOX_DIR):
             try:
@@ -24,18 +23,16 @@ def get_sandbox_files():
                 })
             except Exception:
                 pass
-    except Exception as e:
-        print(f"ERROR doc File Sandbox: {e}")
+    except Exception:
+        pass
     return file_list
 
 def read_file_content(file_name):
     clean_name = os.path.basename(file_name)
     target_path = os.path.join(SANDBOX_DIR, clean_name)
     if not os.path.exists(target_path) or os.path.isdir(target_path):
-        print(f"ERROR [DOWNLOAD] File khong ton tai: {clean_name}")
         return None
     try:
-        print(f"[DOWNLOAD] Dang doc file: {clean_name}")
         with open(target_path, "rb") as f:
             file_bytes = f.read()
             base64_data = base64.b64encode(file_bytes).decode("utf-8")
@@ -43,6 +40,5 @@ def read_file_content(file_name):
                 "file_name": clean_name,
                 "file_base64": base64_data
             }
-    except Exception as e:
-        print(f"ERROR [DOWNLOAD] Loi doc file {clean_name}: {e}")
+    except Exception:
         return None

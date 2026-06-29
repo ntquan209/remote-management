@@ -49,6 +49,9 @@ export const appsPanel = `
     <span class="panel-title">Ứng dụng (Applications Whitelist)</span>
     <span class="panel-subtitle">Chỉ hiển thị và kiểm soát phần mềm được phép</span>
   </div>
+  <div class="toolbar">
+    <button class="btn" onclick="window.refreshAppStatus()"><i class="ti ti-refresh"></i> Refresh trạng thái</button>
+  </div>
   <div class="table-wrap">
     <table>
       <thead>
@@ -247,7 +250,7 @@ export const adminPanel = `
   </div>
   <div class="consent-box">
     <i class="ti ti-shield-lock"></i>
-    <div><strong>Phân quyền nghiêm ngặt:</strong> Chỉ tài khoản có quyền <strong>admin</strong> mới có thể quản lý người dùng. Teacher có thể điều khiển agent, student chỉ xem dashboard.</div>
+    <div><strong>Phân quyền nghiêm ngặt:</strong> Chỉ tài khoản có quyền <strong>admin</strong> mới có thể quản lý người dùng. Teacher có thể điều khiển tất cả agent.</div>
   </div>
 </div>
 `;

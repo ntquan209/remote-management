@@ -10,9 +10,35 @@
  * 1. renderAuthPage() → vẽ form login mặc định
  * 2. Người dùng click "Đăng ký" → switchToRegister() → vẽ form register
  * 3. Người dùng click "Đăng nhập" → switchToLogin() → vẽ form login
- * 4. Submit form → gọi API → thành công → reload trang (vào app)
- *                                    → thất bại → hiển thị lỗi
+ * 4. Submit form → gọi API:
+ *    - Login thành công → reload trang (vào app)
+ *    - Register thành công → hiển thị thông báo chờ admin duyệt
+ *    - Thất bại → hiển thị lỗi
  */
+
+/** Hiển thị thông báo chờ admin duyệt sau khi đăng ký */
+function showPendingApproval() {
+    const loginForm = document.getElementById('auth-login-form');
+    const registerForm = document.getElementById('auth-register-form');
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'none';
+    
+    const box = document.getElementById('auth-box');
+    const msgEl = document.createElement('div');
+    msgEl.id = 'pending-approval';
+    msgEl.innerHTML = `
+        <div style="text-align:center;padding:20px 0">
+            <div style="font-size:48px;margin-bottom:16px">✅</div>
+            <h2 style="color:var(--success);margin-bottom:12px">Đăng ký thành công!</h2>
+            <p style="color:var(--text-muted);line-height:1.6;margin-bottom:20px">
+                Tài khoản của bạn đang chờ <strong>Admin</strong> phê duyệt.<br>
+                Vui lòng quay lại sau khi tài khoản được kích hoạt.
+            </p>
+            <button class="auth-btn" onclick="switchToLogin()">Quay lại đăng nhập</button>
+        </div>
+    `;
+    box.appendChild(msgEl);
+}
 
 import { login, register } from '../lib/api.js';
 
@@ -116,6 +142,10 @@ window.switchToRegister = function() {
  * Chuyển sang form đăng nhập
  */
 window.switchToLogin = function() {
+    // Xóa thông báo chờ duyệt nếu có
+    const pendingEl = document.getElementById('pending-approval');
+    if (pendingEl) pendingEl.remove();
+    
     document.getElementById('auth-register-form').style.display = 'none';
     document.getElementById('auth-login-form').style.display = 'block';
     document.getElementById('login-error').style.display = 'none';
@@ -190,8 +220,10 @@ window.handleRegister = async function(event) {
     
     try {
         await register(username, email, password, fullname);
-        // Thành công → reload để vào app
-        window.location.reload();
+        // Thành công → xóa token vì chưa active, hiển thị chờ duyệt
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        showPendingApproval();
     } catch (err) {
         showError(errorEl, err.message);
     } finally {

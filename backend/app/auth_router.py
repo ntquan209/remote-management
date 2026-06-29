@@ -15,8 +15,8 @@ Routes API - Xác thực & Phân quyền
 3. Xem profile: Client gửi Authorization: Bearer <token> → giải mã → trả về thông tin user
 
 🔐 PHÂN QUYỀN:
-- 3 role: student (sinh viên), teacher (giảng viên), admin (quản trị hệ thống)
-- Mặc định user mới đăng ký có role "student" (sinh viên)
+- 2 role: teacher (giảng viên), admin (quản trị hệ thống)
+- Mặc định user mới đăng ký có role "teacher" với is_active=False (chờ admin duyệt)
 - get_current_user: FastAPI dependency xác thực token
 - require_role(): Dependency kiểm tra role, dùng cho các route cần phân quyền
 - Chỉ admin mới có thể quản lý user (xem danh sách, đổi role, xóa)
@@ -171,8 +171,8 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
         email=request.email,
         full_name=request.full_name,
     hashed_password=hash_password(request.password),
-        role="student",  # Mặc định là sinh viên
-        is_active=True
+        role="teacher",  # Mặc định là teacher
+        is_active=False  # Chờ admin duyệt
     )
     
     db.add(new_user)
@@ -295,7 +295,7 @@ def require_role(required_role: str):
     Nếu user không có role phù hợp → raise HTTPException 403
     """
     def role_checker(current_user: User = Depends(get_current_user)):
-        ROLES = {"admin": 3, "teacher": 2, "student": 1}
+        ROLES = {"admin": 2, "teacher": 1}
         if ROLES.get(current_user.role, 0) < ROLES.get(required_role, 0):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -311,7 +311,7 @@ def require_role(required_role: str):
 
 class UpdateRoleRequest(BaseModel):
     """Schema cho request đổi role user"""
-    role: str = Field(..., pattern="^(admin|teacher|student)$", description="Vai trò mới")
+    role: str = Field(..., pattern="^(admin|teacher)$", description="Vai trò mới")
 
 
 class UserListResponse(BaseModel):
@@ -361,7 +361,7 @@ def update_user_role(
     🔄 Đổi vai trò người dùng (Yêu cầu quyền admin)
     
     - Không thể tự đổi role của chính mình
-    - Role hợp lệ: admin, teacher, student
+    - Role hợp lệ: admin, teacher
     """
     # Không cho tự đổi role chính mình
     if user_id == admin.id:

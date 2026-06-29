@@ -44,7 +44,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     full_name = Column(String, nullable=True)
     hashed_password = Column(String)
-    role = Column(String, default="student")  # student, teacher, admin
+    role = Column(String, default="teacher")  # teacher, admin
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

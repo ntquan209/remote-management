@@ -1,211 +1,431 @@
-# 🧭 Hướng Dẫn Hiểu Toàn Bộ Dự Án Remote Lab
+# Remote Lab Management System — Technical Overview
 
-## 1. TỔNG QUAN 
+> Hệ thống quản trị phòng thực hành từ xa. Cho phép giảng viên quản lý máy tính phòng lab qua web.
 
-Hệ thống **quản trị phòng thực hành từ xa** (Remote Lab Management).
+---
 
-📌 **Mục tiêu:** Cho phép giảng viên (teacher) quản lý các máy tính trong phòng lab từ xa qua web.
-
-**Ví dụ thực tế:**
-- Giảng viên đang ở nhà, đăng nhập vào web
-- Thấy danh sách máy sinh viên đang online
-- Có thể xem màn hình máy sinh viên, chụp ảnh màn hình
-- Có thể tắt/khởi động lại máy sinh viên từ xa
-- Có thể xem danh sách tiến trình đang chạy
-- Có thể ghi nhận phím bấm (keylogger) trên máy sinh viên
-
-## 2. KIẾN TRÚC HỆ THỐNG
+## 1. System Architecture (3-Tier)
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     TRÌNH DUYỆT WEB                          │
-│  Frontend (Vite + JavaScript) - port 5173                   │
-│  Giao diện quản lý cho giảng viên                           │
-└────────────────────┬─────────────────────────────────────────┘
-                     │ HTTP (REST API) + WebSocket
-                     ▼
-┌──────────────────────────────────────────────────────────────┐
-│                     BACKEND (FastAPI - Python)                │
-│  Chạy trên máy chủ - port 8000                               │
-│  - Xác thực (JWT login/register)                             │
-│  - Chuyển tiếp lệnh tới Agent Python                         │
-│  - Lưu dữ liệu vào SQLite                                    │
-└────────────────────┬─────────────────────────────────────────┘
-                     │ WebSocket
-                     ▼
-┌──────────────────────────────────────────────────────────────┐
-│                     AGENT PYTHON                              │
-│  Chạy trên MÁY SINH VIÊN (máy trạm)                         │
-│  - Thực thi lệnh nhận từ Backend                             │
-│  - Chụp màn hình, quét process, bật webcam...                │
-└──────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                    FRONTEND (Browser)                          │
+│  Vite + Vanilla JavaScript — port 5173                        │
+│  Giao diện quản lý cho giảng viên                             │
+│  Role-based UI: student/teacher/admin                         │
+└───────────────────────┬────────────────────────────────────────┘
+                        │ HTTP (REST) + WebSocket
+                        ▼
+┌────────────────────────────────────────────────────────────────┐
+│                    BACKEND (FastAPI - Python)                  │
+│  Chạy trên máy chủ — port 8000                                │
+│  Chức năng:                                                   │
+│  • Xác thực JWT (login/register)                              │
+│  • Chuyển tiếp lệnh Frontend ↔ Agent                          │
+│  • Ghi audit log realtime vào SQLite                          │
+│  • Phân quyền: student → teacher → admin                      │
+└───────────────────────┬────────────────────────────────────────┘
+                        │ WebSocket
+                        ▼
+┌────────────────────────────────────────────────────────────────┐
+│              AGENT (Python) — Student Machine                  │
+│  Chạy trên máy sinh viên (Kali Linux)                         │
+│  Nhận lệnh từ Backend → thực thi → gửi kết quả về             │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## 3. CÁC FILE QUAN TRỌNG VÀ CHỨC NĂNG
+### Communication Protocols
 
-### 📁 `backend/` (Python - FastAPI)
+| Channel | Protocol | Usage |
+|---------|----------|-------|
+| Frontend ↔ Backend | REST (HTTP) | Login, register, fetch audit logs, admin API |
+| Frontend ↔ Backend | WebSocket | Real-time commands: screenshot, process list, webcam, keylogger |
+| Backend ↔ Agent | WebSocket | Forward commands, receive agent responses |
 
-| File | Chức năng |
-|------|-----------|
-| `app/main.py` | **File chính** - Khởi tạo server, khai báo API, WebSocket |
-| `app/routes.py` | **API đăng nhập/đăng ký/phân quyền** - Xác thực người dùng |
-| `app/auth.py` | **Bảo mật** - Mã hóa mật khẩu (bcrypt), tạo JWT token |
-| `app/models.py` | **Cấu trúc database** - Định nghĩa bảng User, Agent, Task |
-| `app/database.py` | **Kết nối database** - SQLAlchemy + SQLite |
-| `app/manager.py` | **Quản lý WebSocket** - Kết nối với các Agent |
-| `seed.py` | **Tạo tài khoản admin** - Chạy 1 lần khi cài đặt |
+---
 
-### 📁 `frontend/` (JavaScript - Vite)
+## 2. Technology Stack
 
-| File | Chức năng |
-|------|-----------|
-| `src/index.js` | **File chính Frontend** - Kiểm tra đăng nhập, render giao diện, WebSocket |
-| `src/lib/api.js` | **Gọi API backend** - Login, register, logout, admin API |
-| `src/lib/socket.js` | **Kết nối WebSocket** - Gửi/nhận lệnh realtime |
-| `src/pages/auth.js` | **Trang đăng nhập/đăng ký** - Giao diện login form |
-| `src/templates/renderer.js` | **Render toàn bộ giao diện** - Ghép các template |
-| `src/templates/panels.js` | **Các panel chức năng** - Dashboard, Monitor, Control, Admin |
-| `src/templates/sidebar.js` | **Menu bên trái** - Các mục điều hướng |
-| `src/templates/topbar.js` | **Thanh trên cùng** - Chọn máy, trạng thái |
-| `src/pages/monitor.js` | **Xử lý màn hình + process** - Chụp màn hình, xem tiến trình |
-| `src/pages/control.js` | **Xử lý điều khiển** - Power, webcam, keylogger |
-| `src/config/app.config.js` | **Cấu hình** - URL backend, WebSocket |
+### Backend (`backend/`)
 
-## 4. LUỒNG ĐĂNG NHẬP (AUTH FLOW)
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Framework | FastAPI (Python) | REST API + WebSocket server |
+| Auth | JWT (python-jose) + bcrypt | Token-based authentication |
+| Database | SQLite + SQLAlchemy ORM | Lightweight, no server needed |
+| Password Hashing | passlib (bcrypt) | Secure password storage |
+
+### Frontend (`frontend/`)
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Build Tool | Vite | Fast dev server + bundler |
+| UI | Vanilla JavaScript | No framework overhead |
+| WebSocket | Native WebSocket API | Real-time bidirectional communication |
+| Styling | Custom CSS | Dark theme, responsive layout |
+
+### Agent (`agent/`)
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| WebSocket | websocket-client | Connect to backend |
+| Screen Capture | PIL + gnome-screenshot / scrot / mss | Multi-method fallback |
+| Camera | OpenCV + ffmpeg + GStreamer | Multi-backend webcam streaming |
+| Keylogger | pynput | Ethical keylogging with sandbox mode |
+| Process | psutil | Task manager data |
+
+---
+
+## 3. Backend Deep Dive (`backend/app/`)
+
+### File Structure
+
+| File | Role | Key Functions |
+|------|------|---------------|
+| `main.py` | Entry point | FastAPI app, WebSocket handler, REST endpoints |
+| `auth_router.py` | Auth API | `/api/register`, `/api/login`, `/api/me`, admin CRUD |
+| `auth.py` | Security helpers | `hash_password()`, `verify_password()`, JWT create/decode |
+| `models.py` | Database schema | User, Agent, Task, AuditLog |
+| `database.py` | DB connection | SQLAlchemy engine, SessionLocal, init_db() |
+| `manager.py` | WebSocket manager | `connect()`, `disconnect()`, `send_to_agent()`, `broadcast()` |
+| `config.py` | Settings | SECRET_KEY, ALGORITHM, token expiry |
+
+### REST API Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/` | No | Health check |
+| GET | `/api/status` | No | Connected agents count |
+| GET | `/api/audit-logs` | No | Last 50 audit log entries |
+| POST | `/api/register` | No | Create account (default role: student) |
+| POST | `/api/login` | No | Authenticate, get JWT |
+| GET | `/api/me` | Bearer | Current user info |
+| GET | `/api/admin/users` | Admin | List all users |
+| PUT | `/api/admin/users/{id}/role` | Admin | Change user role |
+| DELETE | `/api/admin/users/{id}` | Admin | Delete user |
+| PUT | `/api/admin/users/{id}/toggle-active` | Admin | Lock/unlock user |
+
+### WebSocket Flow (Command Routing)
 
 ```
-1. Mở web → index.js kiểm tra localStorage có token không?
-   
-   ❌ Không có token → renderAuthPage() → hiện form login
-   
-   ✅ Có token → renderApp() → hiện giao diện chính
-
-2. Điền username/password → click "Đăng nhập"
-   
-   Login form → gọi api.js: login() → POST /api/login
-   
-   Backend routes.py: kiểm tra user, verify password
-   
-   ✅ Đúng → trả về JWT token + thông tin user
-   
-   Frontend lưu token vào localStorage → reload trang
-
-3. Sau reload → có token → render giao diện chính
-   
-   index.js kiểm tra user.role:
-   - student → ẩn hết mục điều khiển, chỉ xem dashboard
-   - teacher → hiện toàn bộ chức năng
-   - admin → hiện toàn bộ + thêm "Quản trị hệ thống"
+Frontend sends:  { "event": "SCREENSHOT", "target": "Kali_Lab_01", "data": {} }
+                       │
+                       ▼
+Backend main.py: command_map = {
+    "SCREENSHOT" → "take_screenshot",
+    "KILL_PROCESS" → "kill_process",
+    "WEBCAM_START" → "get_webcam_frame",
+    "KEYLOGGER_TOGGLE" → "toggle_keylogger",
+    ... 12 commands total
+}
+                       │
+                       ▼
+Agent receives:  { "command": "take_screenshot", "data": {} }
+                       │
+                       ▼
+Agent responds:  { "command": "agent_send_screen", "machine_name": "...", "image_base64": "..." }
+                       │
+                       ▼
+Backend broadcasts to all Frontend tabs
 ```
 
-## 5. PHÂN QUYỀN (ROLES)
+---
 
-| Role | Dashboard | Điều khiển Agent | Quản lý User |
-|------|-----------|-------------------|--------------|
-| **student** (mặc định) | ✅ Chỉ xem | ❌ Không | ❌ Không |
-| **teacher** | ✅ Xem | ✅ Shutdown, Restart, Screen... | ❌ Không |
-| **admin** | ✅ Xem | ✅ Toàn quyền | ✅ Thêm/Sửa/Xóa user |
+## 4. Agent Deep Dive (`agent/`)
 
-**Cách backend kiểm tra quyền:**
-```python
-# routes.py - require_role()
-def require_role(required_role):
-    def role_checker(user):
-        ROLES = {"admin": 3, "teacher": 2, "student": 1}
-        if user_role < required_role → raise HTTPException 403
-    return role_checker
+### File Structure
+
+| File | Responsibility | Key Features |
+|------|---------------|--------------|
+| `agent.py` | Main loop | WebSocket connect/reconnect, message dispatch, sender queue |
+| `modules/media.py` | Screen capture | DBus → gnome-screenshot → scrot → mss (4-level fallback) |
+| `modules/webcam.py` | Webcam streaming | ffmpeg → GStreamer → OpenCV (3-level fallback), BGR correction, YUYV recovery |
+| `modules/keylogger.py` | Ethical keylogger | Sandbox mode, blocked keywords, real-time status reporting |
+| `modules/system.py` | Process manager | psutil-based process list, kill, shutdown/restart |
+| `modules/app_control.py` | App launcher | Predefined Kali apps dictionary (14 apps) |
+| `modules/sandbox.py` | File sandbox | Downloads directory access, base64 encoding |
+| `modules/screen_notify.py` | Visual warning | Tkinter overlay banner "MÀN HÌNH ĐANG BỊ QUẢN LÝ" |
+| `modules/window_monitor.py` | Active window | xdotool → xprop (Linux) / user32 (Windows) |
+
+### Threading Model
+
+```
+main thread: WebSocket event loop (run_forever)
+    │
+    ├── sender_loop (daemon) — single-threaded WebSocket writer via queue
+    │
+    ├── sys_monitor_loop (daemon) — sends process list every 5s
+    │
+    ├── webcam_stream_worker (daemon) — camera capture loop
+    │
+    ├── keylogger listener (pynput) — keyboard event callbacks
+    │
+    └── tk-warning (daemon) — Tkinter overlay window
 ```
 
-**Cách frontend ẩn giao diện:**
+**Key Design Decision:** All WebSocket writes go through a single `queue.Queue` + `sender_loop` to avoid thread-safety issues with `websocket-client`.
+
+---
+
+## 5. Authentication & Authorization
+
+### Role Hierarchy
+
+```
+admin (level 3) ─── full access + user management
+    │
+teacher (level 2) ── agent control (screenshot, process, keylogger, webcam, power)
+    │
+student (level 1) ── view-only dashboard
+```
+
+### Auth Flow
+
+```
+User → Login Form → POST /api/login
+                        │
+                        ▼
+              Backend verifies password (bcrypt)
+                        │
+                        ▼
+              JWT created (30 min expiry)
+                        │
+                        ▼
+              Token stored in localStorage
+                        │
+                        ▼
+              Page reload → checkAuth() → GET /api/me
+                        │
+                  ┌─────┴─────┐
+                  ▼           ▼
+              Valid        Expired
+                  │           │
+                  ▼           ▼
+            renderApp()   renderAuthPage()
+```
+
+### Frontend Role-Based UI Control
+
 ```javascript
-// index.js - applyRoleBasedUI()
-if (!hasRole('teacher')) {
-    // Ẩn các nút: Process, Screen, Keylog, Webcam, Power
-}
-if (hasRole('admin')) {
-    // Thêm mục "Quản trị hệ thống" vào sidebar
-}
+// api.js — hasRole() uses numeric comparison
+const ROLES = { admin: 3, teacher: 2, student: 1 };
+
+// index.js — applyRoleBasedUI()
+// student: Hides Control/Monitor nav sections
+// teacher: Shows all features
+// admin: Shows all + "Quản trị hệ thống" menu
 ```
 
-## 6. LUỒNG ĐIỀU KHIỂN (Frontend → Backend → Agent)
+---
+
+## 6. Webcam Streaming Pipeline
 
 ```
-Giảng viên click "Chụp màn hình"
-        │
-        ▼
-control.js: emitCommand('SCREENSHOT', targetMachine)
-        │
-        ▼
-socket.js: gửi JSON qua WebSocket
-{ "event": "SCREENSHOT", "target": "agent-01" }
-        │
-        ▼
-Backend main.py: nhận lệnh
-→ thấy có "target": "agent-01"
-→ chuyển tiếp tới agent-01 qua WebSocket
-{ "command": "take_screenshot" }
-        │
-        ▼
-Agent Python: nhận lệnh
-→ thực thi system_manager.take_screenshot()
-→ chụp ảnh màn hình
-→ gửi ảnh (base64) về backend
-        │
-        ▼
-Backend: nhận ảnh từ agent
-→ broadcast tới frontend (agent_001)
-        │
-        ▼
-Frontend index.js: nhận sự kiện 'screenshot'
-→ hiển thị ảnh trong #screen-display-area
+Agent receives "get_webcam_frame" command
+         │
+         ▼
+set_v4l2_mjpg() — try to set MJPEG format via v4l2-ctl
+         │
+         ▼
+try_ffmpeg_pipe() — fastest: pipe raw MJPEG from ffmpeg
+   └─ fail → try_gstreamer_capture() — GStreamer pipeline
+        └─ fail → try_opencv_backends() — V4L2 → FFMPEG → default
+             └─ fail → log_v4l2_info() + abort
+         │
+         ▼
+Frame loop (every 350ms):
+   read frame → resize 640×480
+   → try_yuyv_from_3ch() — fix YUYV mis-decoded as BGR
+   → pick_bgr_permutation() — fix wrong channel order
+   → encode JPEG quality 75 → base64 → send via queue
 ```
 
-## 7. DATABASE (SQLite)
+---
 
-File: `backend/remote_lab.db` (tự động tạo, không cần cài đặt)
+## 7. Ethical Keylogger with Sandbox
 
-**Bảng users:**
-| id | username | email | password (hash) | role | is_active |
-|----|----------|-------|-----------------|------|-----------|
-| 1 | admin | admin@... | (bcrypt) | admin | true |
-| 2 | student1 | sv1@... | (bcrypt) | student | true |
+### Sandbox Rules
 
-**Bảng agents:** Lưu thông tin máy trạm (agent_id, hostname, ip...)
-**Bảng tasks:** Lưu lịch sử lệnh đã gửi (command, status, result...)
+| Rule Type | Description | Example |
+|-----------|-------------|---------|
+| **Process allowlist** | Only capture in terminals/editors/IDEs | `gnome-terminal`, `code`, `gedit`, `nano` |
+| **Title keywords** | Only capture in lab-related windows | `lab`, `practice`, `exercise`, `network` |
+| **Blocked keywords** | Never capture sensitive windows | `login`, `password`, `banking`, `facebook` |
+| **Browser mode** | Allow browser only if title matches sandbox | `Kali - lab - Cisco Packet Tracer` ✓ |
 
-## 8. CÁCH CHẠY
+### Data Flow
 
-### Backend:
+```
+Window focus change → _check_active_window()
+    → match against process names and title keywords
+    → update _sandbox_active flag
+    → notify frontend via WebSocket
+
+Key press → on_press() callback
+    → if NOT _sandbox_active → ignore (safe)
+    → if sandbox_active → send key via enqueue
+```
+
+---
+
+## 8. Database Schema (SQLite)
+
+### Tables
+
+**`users`** — Authentication & authorization
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | Auto-increment |
+| username | TEXT UNIQUE | Login name |
+| email | TEXT UNIQUE | Contact email |
+| hashed_password | TEXT | bcrypt hash |
+| role | TEXT | student / teacher / admin |
+| is_active | BOOLEAN | Can be locked by admin |
+
+**`agents`** — Registered machines
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | Auto-increment |
+| agent_id | TEXT UNIQUE | Machine identifier |
+| hostname | TEXT | Machine name |
+| ip_address | TEXT | Network address |
+| is_online | BOOLEAN | Connection status |
+
+**`audit_logs`** — Real-time activity log
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PK | Auto-increment |
+| operator | TEXT | Who performed action |
+| action | TEXT | e.g. TAKE_SCREENSHOT, KILL_PROCESS |
+| target | TEXT | Target machine |
+| status | TEXT | Success / Stopped |
+| created_at | DATETIME | Timestamp |
+
+---
+
+## 9. Project Structure (Full)
+
+```
+remote-lab-project/
+│
+├── agent/                          # Python Agent (student machine)
+│   ├── agent.py                    # Main entry point
+│   ├── requirements.txt            # Dependencies
+│   ├── README.md
+│   └── modules/
+│       ├── media.py                # Screen capture (4 fallback methods)
+│       ├── webcam.py               # Webcam streaming (3 backends)
+│       ├── keylogger.py            # Ethical keylogger with sandbox
+│       ├── system.py               # Process/task manager
+│       ├── app_control.py          # App launcher (14 Kali apps)
+│       ├── sandbox.py              # File sandbox (downloads directory)
+│       ├── screen_notify.py        # Tkinter warning overlay
+│       └── window_monitor.py       # Active window detection
+│
+├── backend/                        # FastAPI Backend (server)
+│   ├── requirements.txt
+│   ├── seed.py                     # Create default admin account
+│   └── app/
+│       ├── main.py                 # FastAPI app + WebSocket handler
+│       ├── auth_router.py          # Auth & admin REST API
+│       ├── auth.py                 # JWT + bcrypt helpers
+│       ├── models.py               # SQLAlchemy schema
+│       ├── database.py             # SQLite connection
+│       ├── manager.py              # WebSocket connection manager
+│       └── config.py               # Settings (secret key, expiry)
+│
+├── frontend/                       # Vite Frontend (teacher browser)
+│   ├── index.html
+│   ├── package.json
+│   └── src/
+│       ├── index.js                # App entry: auth check, routing
+│       ├── config/app.config.js    # Server URLs configuration
+│       ├── lib/
+│       │   ├── api.js              # REST client (login, register, admin)
+│       │   └── socket.js           # WebSocket client (commands, events)
+│       ├── pages/
+│       │   ├── auth.js             # Login/register UI
+│       │   ├── monitor.js          # Screen, process, webcam, keylog handlers
+│       │   └── control.js          # Power, webcam toggle commands
+│       ├── templates/
+│       │   ├── renderer.js         # App layout builder
+│       │   ├── panels.js           # Dashboard, Monitor, Control, Admin panels
+│       │   ├── sidebar.js          # Navigation menu
+│       │   └── topbar.js           # Machine selector, user info
+│       ├── components/
+│       │   └── machine-selector.js # Agent dropdown management
+│       ├── utils/
+│       │   ├── audit.js            # Audit log UI helpers
+│       │   └── dom.js              # DOM switching utilities
+│       └── styles/
+│           └── style.css           # Complete dark theme
+│
+├── STRUCTURE.md                    # This file
+└── run_project.bat                 # Quick start launcher
+```
+
+---
+
+## 10. Deployment & Quick Start
+
+### Backend
 ```bash
 cd backend
-python -m venv .venv          # Tạo môi trường (nếu chưa có)
-source .venv/bin/activate     # Kích hoạt (Linux/Kali)
-pip install -r requirements.txt  # Cài thư viện (nếu chưa có)
-python seed.py                # Tạo tài khoản admin (chạy 1 lần)
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python seed.py                              # Creates admin/admin123
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-→ Backend chạy tại: `http://localhost:8000`
 
-### Frontend:
+### Frontend
 ```bash
 cd frontend
-npm install                   # Cài thư viện (nếu chưa có)
-npm run dev
+npm install
+npm run dev                                 # http://localhost:5173
 ```
-→ Frontend chạy tại: `http://localhost:5173`
 
-### Tài khoản mặc định:
-- **Admin:** admin / admin123
-- **User mới:** tự đăng ký → mặc định là sinh viên
+### Agent (on each student machine)
+```bash
+cd agent
+pip install -r requirements.txt
+python agent.py
+```
 
-## 9. CÁC THUẬT NGỮ
+### Default Accounts
+| Role | Username | Password |
+|------|----------|----------|
+| Admin | admin | admin123 |
+| New user | (register) | (user-set) → role: student |
 
-| Thuật ngữ | Ý nghĩa |
-|-----------|---------|
-| **Agent** | Máy tính sinh viên (máy trạm), chạy script Python |
-| **Backend** | Máy chủ trung tâm, chạy FastAPI |
-| **Frontend** | Giao diện web giảng viên dùng |
-| **JWT** | Token xác thực, hết hạn sau 30 phút |
-| **WebSocket** | Kết nối 2 chiều realtime (gửi lệnh, nhận kết quả) |
-| **SQLite** | Database file nhẹ, không cần cài server |
-| **Role** | Vai trò người dùng (student/teacher/admin) |
+---
+
+## 11. Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Vanilla JS (no React/Vue)** | Lab environment: no build complexity, works on any browser |
+| **SQLite (no PostgreSQL)** | No server installation, single file DB, sufficient for classroom scale |
+| **Single sender thread** | `websocket-client` is NOT thread-safe → all writes via one queue |
+| **Multi-method fallback** | Different Linux distros have different tools; agent auto-detects |
+| **Mutable stop_flag** | `webcam_active = [False]` — reference semantics for thread communication |
+| **Ethical keylogger** | Sandbox mode ensures only lab-relevant keystrokes are captured |
+
+---
+
+## 12. Feature Summary
+
+| Feature | Backend | Frontend | Agent |
+|---------|---------|----------|-------|
+| User authentication | ✅ JWT | ✅ Login/register | — |
+| Role-based access | ✅ require_role() | ✅ hasRole() + UI hide | — |
+| Live screen view | ✅ WebSocket relay | ✅ Real-time image | ✅ 4-method capture |
+| Process monitor | ✅ WebSocket relay | ✅ Top 15 processes | ✅ psutil (5s loop) |
+| Kill process | ✅ Forward command | ✅ Button + confirm | ✅ psutil.terminate() |
+| App control | ✅ Forward command | ✅ Start/stop buttons | ✅ 14 Kali apps |
+| Webcam streaming | ✅ WebSocket relay | ✅ Live video panel | ✅ 3-backend pipeline |
+| Keylogger | ✅ Status notification | ✅ Live key stream | ✅ Sandbox mode |
+| File browser | ✅ Forward command | ✅ File list + download | ✅ Downloads dir |
+| Shutdown/Restart | ✅ Forward command | ✅ Power buttons | ✅ systemctl command |
+| Audit log | ✅ SQLite + broadcast | ✅ Real-time feed | — |
+| Admin user mgmt | ✅ CRUD API | ✅ Admin panel | — |
+| Reconnection | — | ✅ Auto-reconnect | ✅ Auto-reconnect |
+| Screen notification | — | — | ✅ Tkinter overlay |

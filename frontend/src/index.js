@@ -122,7 +122,7 @@ const startApp = async () => {
             // Cập nhật dashboard
             const roleEl = document.getElementById('user-role-display');
             if (roleEl) {
-                const roleMap = { admin: 'Quản trị viên (Admin)', teacher: 'Giảng viên (Teacher)', student: 'Sinh viên (Student)' };
+                const roleMap = { admin: 'Quản trị viên (Admin)', teacher: 'Giảng viên (Teacher)' };
                 roleEl.textContent = roleMap[user.role] || user.role;
             }
             // Cập nhật topbar: tên user + nút logout
@@ -161,7 +161,6 @@ const startApp = async () => {
                         <td>${u.full_name || '-'}</td>
                         <td>
                             <select class="select-role" data-user-id="${u.id}" onchange="adminUpdateRole(${u.id}, this.value).then(r => alert(r.message)).catch(e => alert(e.message))">
-                                <option value="student" ${u.role === 'student' ? 'selected' : ''}>Sinh viên</option>
                                 <option value="teacher" ${u.role === 'teacher' ? 'selected' : ''}>Giảng viên</option>
                                 <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
                             </select>
@@ -189,21 +188,8 @@ const startApp = async () => {
     // Role-based UI: Ẩn các chức năng không phù hợp
     // =============================================
     const applyRoleBasedUI = () => {
-        // Student: chỉ xem dashboard, không có quyền điều khiển
-        if (!hasRole('teacher')) {
-            const navItems = document.querySelectorAll('.nav-item');
-            navItems.forEach(item => {
-                const panel = item.getAttribute('onclick');
-                if (panel && (panel.includes('process') || panel.includes('screen') || panel.includes('keylog') || panel.includes('webcam') || panel.includes('power'))) {
-                    item.style.display = 'none';
-                }
-            });
-            document.querySelectorAll('.nav-section').forEach(s => {
-                if (s.textContent.includes('ĐIỀU KHIỂN') || s.textContent.includes('MONITOR')) {
-                    s.style.display = 'none';
-                }
-            });
-        }
+        // Mọi user (teacher hoặc admin) đều có quyền điều khiển
+        // Không còn role student nữa
         // Admin: hiển thị thêm mục Quản trị
         if (hasRole('admin')) {
             const monitoringSection = document.querySelector('.nav-section');

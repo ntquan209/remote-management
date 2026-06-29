@@ -58,11 +58,13 @@ export const updateMachineDropdown = () => {
   defaultOpt.textContent = "-- Chọn máy trạm mục tiêu --";
   select.appendChild(defaultOpt);
 
-  // Tạo option cho mỗi máy online
+  // Tạo option cho mỗi máy online (hiển thị tên gốc, bỏ hậu tố _tab_xxx)
   currentOnlineList.forEach(machine => {
     const opt = document.createElement('option');
     opt.value = machine;
-    opt.textContent = machine;
+    // Chỉ hiển thị tên gốc: bỏ phần _tab_xxxxx
+    const displayName = machine.replace(/_tab_[a-z0-9]+$/i, '');
+    opt.textContent = displayName;
     select.appendChild(opt);
   });
 
@@ -94,7 +96,8 @@ export const onTargetMachineChange = () => {
   const tbody = getElementById('process-table-body');
   if (tbody) {
     if (targetMachine) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Đang nạp luồng tiến trình thời gian thực của máy [${targetMachine}]...</td></tr>`;
+      const displayName = targetMachine.replace(/_tab_[a-z0-9]+$/i, '');
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Đang nạp luồng tiến trình thời gian thực của máy [${displayName}]...</td></tr>`;
     } else {
       tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Vui lòng chọn một máy trạm để xem tiến trình...</td></tr>`;
     }
@@ -114,7 +117,9 @@ export const updateStatusPill = (isOnline) => {
 
   if (isOnline && targetMachine) {
     pill.className = "status-pill";
-    pill.innerHTML = `<div class="blink"></div>Đang khiển: <strong>${targetMachine}</strong>`;
+    // Hiển thị tên gốc, bỏ hậu tố _tab_xxx
+    const displayName = targetMachine.replace(/_tab_[a-z0-9]+$/i, '');
+    pill.innerHTML = `<div class="blink"></div>Đang khiển: <strong>${displayName}</strong>`;
   } else {
     pill.className = "status-pill offline";
     pill.innerHTML = `<div class="blink"></div>Hệ thống đang chờ thiết bị...`;

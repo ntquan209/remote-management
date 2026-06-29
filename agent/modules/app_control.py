@@ -24,18 +24,15 @@ def get_available_apps():
 def manage_application(action, app_name):
     apps = get_available_apps()
     if app_name not in apps:
-        print("WARNING: {} khong ho tro tren Kali Linux".format(app_name))
         return False
     app_config = apps[app_name]
     try:
         if action == "START":
-            print("[APPS] Khoi chay: {}".format(app_name))
             subprocess.Popen("{} > /dev/null 2>&1 &".format(app_config["start"]), shell=True)
             return True
         elif action == "STOP":
-            print("[APPS] Dong: {}".format(app_name))
             subprocess.Popen("{} > /dev/null 2>&1".format(app_config["stop"]), shell=True)
             return True
-    except Exception as e:
-        print("ERROR xuly ung dung {}: {}".format(app_name, e))
+    except Exception:
+        pass
     return False

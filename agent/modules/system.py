@@ -13,8 +13,8 @@ def get_process_list():
                 "cpu": f"{proc.info['cpu_percent'] or 0.0}%",
                 "ram": f"{ram_mb} MB"
             })
-    except Exception as e:
-        print(f"ERROR scan tien trinh: {e}")
+    except Exception:
+        pass
     return process_list
 
 def kill_process_by_pid(pid):
@@ -22,17 +22,14 @@ def kill_process_by_pid(pid):
         p = psutil.Process(pid)
         p.terminate()
         return True
-    except Exception as e:
-        print(f"ERROR khong the dong tien trinh {pid}: {e}")
+    except Exception:
         return False
 
 def execute_power_cmd(action):
     try:
         if action == "SHUTDOWN":
-            print("WARNING: Dang thuc thi lenh tat may...")
             os.system("systemctl poweroff -i")
         elif action == "RESTART":
-            print("WARNING: Dang thuc thi lenh khoi dong lai...")
             os.system("systemctl reboot -i")
-    except Exception as e:
-        print(f"ERROR thuc thi lenh nguon: {e}")
+    except Exception:
+        pass

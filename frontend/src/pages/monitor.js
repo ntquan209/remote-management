@@ -242,13 +242,19 @@ export const handleProcesses = (data) => {
   const incomingMachine = data.machine_name;
   addMachineOnline(incomingMachine);
 
+  // Luôn cập nhật trạng thái app (app đang bật/tắt) dựa trên process list
+  // của mọi máy, không chỉ máy đang được chọn
+  const procs = data.processes || [];
+  updateAppsStatusFromProcs(procs);
+
+  // Nếu máy này là máy đang được chọn → cập nhật bảng process
   const activeSelection = getTargetMachine();
   if (incomingMachine === activeSelection) {
     const tbody = getElementById('process-table-body');
     if (!tbody) return;
 
     tbody.innerHTML = "";
-    data.processes.forEach(proc => {
+    procs.forEach(proc => {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>${proc.pid}</td>
@@ -264,10 +270,8 @@ export const handleProcesses = (data) => {
 
     const procBadge = getElementById('sidebar-proc-badge');
     const procLabel = getElementById('total-procs-lbl');
-    if (procBadge) procBadge.textContent = data.processes.length;
-    if (procLabel) procLabel.textContent = data.processes.length;
-
-    updateAppsStatusFromProcs(data.processes);
+    if (procBadge) procBadge.textContent = procs.length;
+    if (procLabel) procLabel.textContent = procs.length;
   }
 };
 
@@ -579,6 +583,20 @@ export const updateAppsStatusFromProcs = (processes) => {
 /**
  * Điều phối hành động duy nhất (Toggle) từ nút bấm đơn
  */
+/**
+ * Yêu cầu Agent gửi process list để refresh trạng thái app
+ */
+export const refreshAppStatus = () => {
+  const targetMachine = getTargetMachine();
+  if (!targetMachine) return;
+  // Gửi lệnh REFRESH_PROCS để yêu cầu agent gửi process list mới
+  emitCommand('REFRESH_PROCS', targetMachine, {});
+  console.log(`🔄 [APPS] Yêu cầu refresh trạng thái app từ ${targetMachine}`);
+};
+
+/**
+ * Điều phối hành động duy nhất (Toggle) từ nút bấm đơn
+ */
 export const toggleAppAction = (appName) => {
   const targetMachine = getTargetMachine();
   if (!targetMachine) return alert("Vui lòng chọn một máy trạm để điều khiển ứng dụng!");
@@ -606,6 +624,11 @@ export const toggleAppAction = (appName) => {
   }
 
   triggerApp(nextAction, appName);
+  
+  // Sau 2s tự động refresh lại trạng thái app dựa trên process list thật từ agent
+  setTimeout(() => {
+    refreshAppStatus();
+  }, 2000);
 };
 
 /**
@@ -640,6 +663,7 @@ export const handlePowerCommand = (type) => {
 // Gắn các hàm tương tác mới vào window toàn cục để các thẻ HTML onclick nhận dạng được ngay lập tức
 window.triggerApp = triggerApp;
 window.refreshSandboxFiles = refreshSandboxFiles;
+window.refreshAppStatus = refreshAppStatus;
 window.toggleKlState = toggleKlState;
 window.toggleAppAction = toggleAppAction;
 window.handleKillProcess = handleKillProcess;
